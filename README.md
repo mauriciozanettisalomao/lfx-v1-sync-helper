@@ -1,2 +1,3 @@
-# lfx-v1-sync-helper
-LFX v1&lt;>v2 data sync helper
+# LFX v1<>v2 data sync components
+
+TBD

@@ -1,0 +1,71 @@
+---
+# Copyright The Linux Foundation and each contributor to LFX.
+# SPDX-License-Identifier: MIT
+default_environment: dev
+project_id: c434d4f0-1d51-43c4-b350-d048b0f93055
+environments:
+- name: dev
+- name: staging
+- name: prod
+plugins:
+  extractors:
+  - name: tap-postgres
+    variant: meltanolabs
+    pip_url: meltanolabs-tap-postgres
+    config:
+      database: sfdc
+      user: lfit
+    select:
+    - platform-collaboration__c.*
+    - platform-community__c.*
+    - salesforce-project__c.*
+    metadata:
+      '*':
+        replication-method: INCREMENTAL
+        replication-key: lastmodifieddate
+  - name: tap-dynamodb
+    variant: meltanolabs
+    pip_url: git+https://github.com/MeltanoLabs/tap-dynamodb.git
+    config:
+      aws_default_region: us-west-2
+      tables:
+        - itx-zoom-meetings-invite-responses-v2
+        - itx-zoom-meetings-mappings-v2
+        - itx-zoom-meetings-registrants-v2
+        - itx-zoom-meetings-v2
+        - itx-zoom-past-meetings
+        - itx-zoom-past-meetings-attendees
+        - itx-zoom-past-meetings-invitees
+        - itx-zoom-past-meetings-mappings
+        - itx-zoom-past-meetings-recordings
+        - itx-zoom-past-meetings-summaries
+      metadata:
+        '*':
+          # Setting the replication key allows conditional loads for
+          # target-nats-kv, even though Meltano's tap-dynamodb doesn't support
+          # INCREMENTAL or LOG_BASED replication methods.
+          replication-key: modified_at
+        itx-zoom-meetings-mappings-v2:
+          # No timestamp field for this table.
+          replication-key: ""
+        itx-zoom-past-meetings-mappings:
+          # No timestamp field for this table.
+          replication-key: ""
+      use_aws_env_vars: true
+  loaders:
+  - name: target-nats-kv
+    namespace: target_nats_kv
+    pip_url: -e load/target-nats-kv
+    executable: target-nats-kv
+    settings:
+    - name: url
+      value: nats://localhost:4222
+      alias: host
+    - name: bucket
+      value: meltano
+    - name: user
+    - name: password
+      sensitive: true
+    - name: creds
+      kind: file
+    - name: key_prefix
