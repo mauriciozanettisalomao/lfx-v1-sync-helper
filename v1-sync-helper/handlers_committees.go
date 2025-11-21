@@ -385,41 +385,39 @@ func mapV1DataToCommitteeMemberCreatePayload(ctx context.Context, committeeUID s
 		payload.JobTitle = &title
 	}
 
-	// Map committee role information.
-	roleStruct := &struct {
-		Name      string  `json:"name"`
-		StartDate *string `json:"start_date,omitempty"`
-		EndDate   *string `json:"end_date,omitempty"`
-	}{}
-
+	// Map committee role information - only if role__c is set.
 	if role, ok := v1Data["role__c"].(string); ok && role != "" {
-		roleStruct.Name = role
-	} else {
-		roleStruct.Name = "Member" // Default role.
-	}
-
-	if startDate, ok := v1Data["start_date__c"].(string); ok && startDate != "" {
-		dateOnly := extractDateOnly(startDate)
-		if dateOnly != "" {
-			roleStruct.StartDate = &dateOnly
+		roleStruct := &struct {
+			Name      string  `json:"name"`
+			StartDate *string `json:"start_date,omitempty"`
+			EndDate   *string `json:"end_date,omitempty"`
+		}{
+			Name: role,
 		}
-	}
 
-	if endDate, ok := v1Data["end_date__c"].(string); ok && endDate != "" {
-		dateOnly := extractDateOnly(endDate)
-		if dateOnly != "" {
-			roleStruct.EndDate = &dateOnly
+		if startDate, ok := v1Data["start_date__c"].(string); ok && startDate != "" {
+			dateOnly := extractDateOnly(startDate)
+			if dateOnly != "" {
+				roleStruct.StartDate = &dateOnly
+			}
 		}
-	}
 
-	payload.Role = &struct {
-		Name      string
-		StartDate *string
-		EndDate   *string
-	}{
-		Name:      roleStruct.Name,
-		StartDate: roleStruct.StartDate,
-		EndDate:   roleStruct.EndDate,
+		if endDate, ok := v1Data["end_date__c"].(string); ok && endDate != "" {
+			dateOnly := extractDateOnly(endDate)
+			if dateOnly != "" {
+				roleStruct.EndDate = &dateOnly
+			}
+		}
+
+		payload.Role = &struct {
+			Name      string
+			StartDate *string
+			EndDate   *string
+		}{
+			Name:      roleStruct.Name,
+			StartDate: roleStruct.StartDate,
+			EndDate:   roleStruct.EndDate,
+		}
 	}
 
 	// Map appointed by.
@@ -436,50 +434,39 @@ func mapV1DataToCommitteeMemberCreatePayload(ctx context.Context, committeeUID s
 		payload.Status = "Active" // Default status.
 	}
 
-	// Map voting information.
-	votingStruct := &struct {
-		Status    string  `json:"status"`
-		StartDate *string `json:"start_date,omitempty"`
-		EndDate   *string `json:"end_date,omitempty"`
-	}{}
-
+	// Map voting information - only if voting_status__c is set.
 	if votingStatus, ok := v1Data["voting_status__c"].(string); ok && votingStatus != "" {
-		votingStruct.Status = votingStatus
-	} else {
-		votingStruct.Status = "Non-Voting" // Default voting status.
-	}
-
-	if votingStartDate, ok := v1Data["voting_start_date__c"].(string); ok && votingStartDate != "" {
-		dateOnly := extractDateOnly(votingStartDate)
-		if dateOnly != "" {
-			votingStruct.StartDate = &dateOnly
+		votingStruct := &struct {
+			Status    string  `json:"status"`
+			StartDate *string `json:"start_date,omitempty"`
+			EndDate   *string `json:"end_date,omitempty"`
+		}{
+			Status: votingStatus,
 		}
-	}
 
-	if votingEndDate, ok := v1Data["voting_end_date__c"].(string); ok && votingEndDate != "" {
-		dateOnly := extractDateOnly(votingEndDate)
-		if dateOnly != "" {
-			votingStruct.EndDate = &dateOnly
+		if votingStartDate, ok := v1Data["voting_start_date__c"].(string); ok && votingStartDate != "" {
+			dateOnly := extractDateOnly(votingStartDate)
+			if dateOnly != "" {
+				votingStruct.StartDate = &dateOnly
+			}
 		}
-	}
 
-	payload.Voting = &struct {
-		Status    string
-		StartDate *string
-		EndDate   *string
-	}{
-		Status:    votingStruct.Status,
-		StartDate: votingStruct.StartDate,
-		EndDate:   votingStruct.EndDate,
-	}
+		if votingEndDate, ok := v1Data["voting_end_date__c"].(string); ok && votingEndDate != "" {
+			dateOnly := extractDateOnly(votingEndDate)
+			if dateOnly != "" {
+				votingStruct.EndDate = &dateOnly
+			}
+		}
 
-	// Map GAC-specific fields.
-	if country, ok := v1Data["country"].(string); ok && country != "" {
-		payload.Country = &country
-	}
-
-	if agency, ok := v1Data["agency"].(string); ok && agency != "" {
-		payload.Agency = &agency
+		payload.Voting = &struct {
+			Status    string
+			StartDate *string
+			EndDate   *string
+		}{
+			Status:    votingStruct.Status,
+			StartDate: votingStruct.StartDate,
+			EndDate:   votingStruct.EndDate,
+		}
 	}
 
 	// Map organization information.
@@ -495,12 +482,15 @@ func mapV1DataToCommitteeMemberCreatePayload(ctx context.Context, committeeUID s
 		orgName := fmt.Sprintf("Organization-%s", accountSFID)
 		orgStruct.Name = &orgName
 
-		payload.Organization = &struct {
-			Name    *string
-			Website *string
-		}{
-			Name:    orgStruct.Name,
-			Website: orgStruct.Website,
+		// Only set Organization if we have meaningful data (website is always nil here)
+		if orgStruct.Name != nil {
+			payload.Organization = &struct {
+				Name    *string
+				Website *string
+			}{
+				Name:    orgStruct.Name,
+				Website: orgStruct.Website,
+			}
 		}
 	}
 
@@ -538,41 +528,39 @@ func mapV1DataToCommitteeMemberUpdatePayload(ctx context.Context, committeeUID, 
 		payload.JobTitle = &title
 	}
 
-	// Map committee role information.
-	roleStruct := &struct {
-		Name      string  `json:"name"`
-		StartDate *string `json:"start_date,omitempty"`
-		EndDate   *string `json:"end_date,omitempty"`
-	}{}
-
+	// Map committee role information - only if role__c is set.
 	if role, ok := v1Data["role__c"].(string); ok && role != "" {
-		roleStruct.Name = role
-	} else {
-		roleStruct.Name = "Member" // Default role.
-	}
-
-	if startDate, ok := v1Data["start_date__c"].(string); ok && startDate != "" {
-		dateOnly := extractDateOnly(startDate)
-		if dateOnly != "" {
-			roleStruct.StartDate = &dateOnly
+		roleStruct := &struct {
+			Name      string  `json:"name"`
+			StartDate *string `json:"start_date,omitempty"`
+			EndDate   *string `json:"end_date,omitempty"`
+		}{
+			Name: role,
 		}
-	}
 
-	if endDate, ok := v1Data["end_date__c"].(string); ok && endDate != "" {
-		dateOnly := extractDateOnly(endDate)
-		if dateOnly != "" {
-			roleStruct.EndDate = &dateOnly
+		if startDate, ok := v1Data["start_date__c"].(string); ok && startDate != "" {
+			dateOnly := extractDateOnly(startDate)
+			if dateOnly != "" {
+				roleStruct.StartDate = &dateOnly
+			}
 		}
-	}
 
-	payload.Role = &struct {
-		Name      string
-		StartDate *string
-		EndDate   *string
-	}{
-		Name:      roleStruct.Name,
-		StartDate: roleStruct.StartDate,
-		EndDate:   roleStruct.EndDate,
+		if endDate, ok := v1Data["end_date__c"].(string); ok && endDate != "" {
+			dateOnly := extractDateOnly(endDate)
+			if dateOnly != "" {
+				roleStruct.EndDate = &dateOnly
+			}
+		}
+
+		payload.Role = &struct {
+			Name      string
+			StartDate *string
+			EndDate   *string
+		}{
+			Name:      roleStruct.Name,
+			StartDate: roleStruct.StartDate,
+			EndDate:   roleStruct.EndDate,
+		}
 	}
 
 	// Map appointed by.
@@ -589,41 +577,39 @@ func mapV1DataToCommitteeMemberUpdatePayload(ctx context.Context, committeeUID, 
 		payload.Status = "Active" // Default status.
 	}
 
-	// Map voting information.
-	votingStruct := &struct {
-		Status    string  `json:"status"`
-		StartDate *string `json:"start_date,omitempty"`
-		EndDate   *string `json:"end_date,omitempty"`
-	}{}
-
+	// Map voting information - only if voting_status__c is set.
 	if votingStatus, ok := v1Data["voting_status__c"].(string); ok && votingStatus != "" {
-		votingStruct.Status = votingStatus
-	} else {
-		votingStruct.Status = "Non-Voting" // Default voting status.
-	}
-
-	if votingStartDate, ok := v1Data["voting_start_date__c"].(string); ok && votingStartDate != "" {
-		dateOnly := extractDateOnly(votingStartDate)
-		if dateOnly != "" {
-			votingStruct.StartDate = &dateOnly
+		votingStruct := &struct {
+			Status    string  `json:"status"`
+			StartDate *string `json:"start_date,omitempty"`
+			EndDate   *string `json:"end_date,omitempty"`
+		}{
+			Status: votingStatus,
 		}
-	}
 
-	if votingEndDate, ok := v1Data["voting_end_date__c"].(string); ok && votingEndDate != "" {
-		dateOnly := extractDateOnly(votingEndDate)
-		if dateOnly != "" {
-			votingStruct.EndDate = &dateOnly
+		if votingStartDate, ok := v1Data["voting_start_date__c"].(string); ok && votingStartDate != "" {
+			dateOnly := extractDateOnly(votingStartDate)
+			if dateOnly != "" {
+				votingStruct.StartDate = &dateOnly
+			}
 		}
-	}
 
-	payload.Voting = &struct {
-		Status    string
-		StartDate *string
-		EndDate   *string
-	}{
-		Status:    votingStruct.Status,
-		StartDate: votingStruct.StartDate,
-		EndDate:   votingStruct.EndDate,
+		if votingEndDate, ok := v1Data["voting_end_date__c"].(string); ok && votingEndDate != "" {
+			dateOnly := extractDateOnly(votingEndDate)
+			if dateOnly != "" {
+				votingStruct.EndDate = &dateOnly
+			}
+		}
+
+		payload.Voting = &struct {
+			Status    string
+			StartDate *string
+			EndDate   *string
+		}{
+			Status:    votingStruct.Status,
+			StartDate: votingStruct.StartDate,
+			EndDate:   votingStruct.EndDate,
+		}
 	}
 
 	// Map GAC-specific fields.
@@ -648,12 +634,15 @@ func mapV1DataToCommitteeMemberUpdatePayload(ctx context.Context, committeeUID, 
 		orgName := fmt.Sprintf("Organization-%s", accountSFID)
 		orgStruct.Name = &orgName
 
-		payload.Organization = &struct {
-			Name    *string
-			Website *string
-		}{
-			Name:    orgStruct.Name,
-			Website: orgStruct.Website,
+		// Only set Organization if we have meaningful data (website is always nil here)
+		if orgStruct.Name != nil {
+			payload.Organization = &struct {
+				Name    *string
+				Website *string
+			}{
+				Name:    orgStruct.Name,
+				Website: orgStruct.Website,
+			}
 		}
 	}
 
