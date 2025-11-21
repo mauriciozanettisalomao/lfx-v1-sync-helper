@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	committeeservice "github.com/linuxfoundation/lfx-v2-committee-service/gen/committee_service"
 	"github.com/nats-io/nats.go/jetstream"
@@ -260,4 +261,417 @@ func mapV1DataToCommitteeUpdateBasePayload(ctx context.Context, committeeUID str
 	// UpdateCommitteeBasePayload does not support BusinessEmailRequired field.
 
 	return payload, nil
+}
+
+// handleCommitteeMemberUpdate processes a committee member update from platform-community__c records.
+func handleCommitteeMemberUpdate(ctx context.Context, key string, v1Data map[string]any, userInfo UserInfo, mappingsKV jetstream.KeyValue) {
+	// Check if we should skip this sync operation.
+	if shouldSkipSync(ctx, v1Data) {
+		return
+	}
+
+	// Extract committee member SFID.
+	sfid, ok := v1Data["sfid"].(string)
+	if !ok || sfid == "" {
+		logger.With("key", key).ErrorContext(ctx, "no SFID found in committee member data")
+		return
+	}
+
+	// Extract collaboration_name__c to get committee UID.
+	collaborationNameV1, ok := v1Data["collaboration_name__c"].(string)
+	if !ok || collaborationNameV1 == "" {
+		logger.With("key", key, "sfid", sfid).ErrorContext(ctx, "no collaboration_name__c found in committee member data")
+		return
+	}
+
+	// Look up committee UID from collaboration_name__c mapping.
+	// Note: collaboration_name__c points to the v1 SFID of the committee.
+	committeeUID := ""
+	committeeMappingKey := fmt.Sprintf("committee.sfid.%s", collaborationNameV1)
+	if entry, err := mappingsKV.Get(ctx, committeeMappingKey); err == nil {
+		committeeUID = string(entry.Value())
+		logger.With("collaboration_sfid", collaborationNameV1, "committee_uid", committeeUID).DebugContext(ctx, "found committee UID from committee SFID mapping")
+	} else {
+		logger.With("collaboration_sfid", collaborationNameV1, errKey, err).WarnContext(ctx, "could not find committee UID in mappings for committee member")
+		return
+	}
+
+	// Check if we have an existing member mapping.
+	memberMappingKey := fmt.Sprintf("committee_member.sfid.%s", sfid)
+	existingMemberUID := ""
+
+	if entry, err := mappingsKV.Get(ctx, memberMappingKey); err == nil {
+		existingMemberUID = string(entry.Value())
+	}
+
+	var memberUID string
+	var err error
+
+	if existingMemberUID != "" {
+		// Update existing committee member.
+		logger.With("member_uid", existingMemberUID, "sfid", sfid, "committee_uid", committeeUID).InfoContext(ctx, "updating existing committee member")
+
+		// Map V1 data to update payload.
+		var payload *committeeservice.UpdateCommitteeMemberPayload
+		payload, err = mapV1DataToCommitteeMemberUpdatePayload(ctx, committeeUID, existingMemberUID, v1Data, mappingsKV)
+		if err != nil {
+			logger.With(errKey, err, "sfid", sfid).ErrorContext(ctx, "failed to map v1 data to committee member update payload")
+			return
+		}
+
+		err = updateCommitteeMember(ctx, payload, userInfo)
+		memberUID = existingMemberUID
+	} else {
+		// Create new committee member.
+		logger.With("sfid", sfid, "committee_uid", committeeUID).InfoContext(ctx, "creating new committee member")
+
+		// Map V1 data to create payload.
+		var payload *committeeservice.CreateCommitteeMemberPayload
+		payload, err = mapV1DataToCommitteeMemberCreatePayload(ctx, committeeUID, v1Data, mappingsKV)
+		if err != nil {
+			logger.With(errKey, err, "sfid", sfid).ErrorContext(ctx, "failed to map v1 data to committee member create payload")
+			return
+		}
+
+		var response *committeeservice.CommitteeMemberFullWithReadonlyAttributes
+		response, err = createCommitteeMember(ctx, payload, userInfo)
+		if response != nil && response.UID != nil {
+			memberUID = *response.UID
+		}
+	}
+
+	if err != nil {
+		logger.With(errKey, err, "sfid", sfid).ErrorContext(ctx, "failed to sync committee member")
+		return
+	}
+
+	// Store the member mapping.
+	if memberUID != "" {
+		if _, err := mappingsKV.Put(ctx, memberMappingKey, []byte(memberUID)); err != nil {
+			logger.With(errKey, err, "sfid", sfid, "member_uid", memberUID).WarnContext(ctx, "failed to store committee member mapping")
+		}
+	}
+
+	logger.With("member_uid", memberUID, "sfid", sfid, "committee_uid", committeeUID).InfoContext(ctx, "successfully synced committee member")
+}
+
+// mapV1DataToCommitteeMemberCreatePayload converts V1 platform-community__c data to a CreateCommitteeMemberPayload.
+func mapV1DataToCommitteeMemberCreatePayload(ctx context.Context, committeeUID string, v1Data map[string]any, mappingsKV jetstream.KeyValue) (*committeeservice.CreateCommitteeMemberPayload, error) {
+	// Extract required fields.
+	email := ""
+	if contactEmail, ok := v1Data["contactemail__c"].(string); ok && contactEmail != "" {
+		email = contactEmail
+	}
+
+	if email == "" {
+		return nil, fmt.Errorf("missing required email field")
+	}
+
+	payload := &committeeservice.CreateCommitteeMemberPayload{
+		UID:   committeeUID,
+		Email: email,
+	}
+
+	// Map contact information.
+	if contactNameV1, ok := v1Data["contact_name__c"].(string); ok && contactNameV1 != "" {
+		// Look up user information from contact mapping if available.
+		// For now, we'll extract what we can from the platform-community record.
+		payload.Username = extractUsernameFromEmail(email)
+	}
+
+	// Map job title.
+	if title, ok := v1Data["title"].(string); ok && title != "" {
+		payload.JobTitle = &title
+	}
+
+	// Map committee role information.
+	roleStruct := &struct {
+		Name      string  `json:"name"`
+		StartDate *string `json:"start_date,omitempty"`
+		EndDate   *string `json:"end_date,omitempty"`
+	}{}
+
+	if role, ok := v1Data["role__c"].(string); ok && role != "" {
+		roleStruct.Name = role
+	} else {
+		roleStruct.Name = "Member" // Default role.
+	}
+
+	if startDate, ok := v1Data["start_date__c"].(string); ok && startDate != "" {
+		dateOnly := extractDateOnly(startDate)
+		if dateOnly != "" {
+			roleStruct.StartDate = &dateOnly
+		}
+	}
+
+	if endDate, ok := v1Data["end_date__c"].(string); ok && endDate != "" {
+		dateOnly := extractDateOnly(endDate)
+		if dateOnly != "" {
+			roleStruct.EndDate = &dateOnly
+		}
+	}
+
+	payload.Role = &struct {
+		Name      string
+		StartDate *string
+		EndDate   *string
+	}{
+		Name:      roleStruct.Name,
+		StartDate: roleStruct.StartDate,
+		EndDate:   roleStruct.EndDate,
+	}
+
+	// Map appointed by.
+	if appointedBy, ok := v1Data["appointed_by__c"].(string); ok && appointedBy != "" {
+		payload.AppointedBy = appointedBy
+	} else {
+		payload.AppointedBy = "Unknown" // Default value.
+	}
+
+	// Map status.
+	if status, ok := v1Data["status__c"].(string); ok && status != "" {
+		payload.Status = status
+	} else {
+		payload.Status = "Active" // Default status.
+	}
+
+	// Map voting information.
+	votingStruct := &struct {
+		Status    string  `json:"status"`
+		StartDate *string `json:"start_date,omitempty"`
+		EndDate   *string `json:"end_date,omitempty"`
+	}{}
+
+	if votingStatus, ok := v1Data["voting_status__c"].(string); ok && votingStatus != "" {
+		votingStruct.Status = votingStatus
+	} else {
+		votingStruct.Status = "Non-Voting" // Default voting status.
+	}
+
+	if votingStartDate, ok := v1Data["voting_start_date__c"].(string); ok && votingStartDate != "" {
+		dateOnly := extractDateOnly(votingStartDate)
+		if dateOnly != "" {
+			votingStruct.StartDate = &dateOnly
+		}
+	}
+
+	if votingEndDate, ok := v1Data["voting_end_date__c"].(string); ok && votingEndDate != "" {
+		dateOnly := extractDateOnly(votingEndDate)
+		if dateOnly != "" {
+			votingStruct.EndDate = &dateOnly
+		}
+	}
+
+	payload.Voting = &struct {
+		Status    string
+		StartDate *string
+		EndDate   *string
+	}{
+		Status:    votingStruct.Status,
+		StartDate: votingStruct.StartDate,
+		EndDate:   votingStruct.EndDate,
+	}
+
+	// Map GAC-specific fields.
+	if country, ok := v1Data["country"].(string); ok && country != "" {
+		payload.Country = &country
+	}
+
+	if agency, ok := v1Data["agency"].(string); ok && agency != "" {
+		payload.Agency = &agency
+	}
+
+	// Map organization information.
+	if accountSFID, ok := v1Data["account__c"].(string); ok && accountSFID != "" {
+		// Look up organization information from account mapping if available.
+		// For now, we'll use placeholder organization structure.
+		orgStruct := &struct {
+			Name    *string `json:"name,omitempty"`
+			Website *string `json:"website,omitempty"`
+		}{}
+
+		// Try to get organization name from mappings or use account SFID as fallback.
+		orgName := fmt.Sprintf("Organization-%s", accountSFID)
+		orgStruct.Name = &orgName
+
+		payload.Organization = &struct {
+			Name    *string
+			Website *string
+		}{
+			Name:    orgStruct.Name,
+			Website: orgStruct.Website,
+		}
+	}
+
+	return payload, nil
+}
+
+// mapV1DataToCommitteeMemberUpdatePayload converts V1 platform-community__c data to an UpdateCommitteeMemberPayload.
+func mapV1DataToCommitteeMemberUpdatePayload(ctx context.Context, committeeUID, memberUID string, v1Data map[string]any, mappingsKV jetstream.KeyValue) (*committeeservice.UpdateCommitteeMemberPayload, error) {
+	// Extract required fields.
+	email := ""
+	if contactEmail, ok := v1Data["contactemail__c"].(string); ok && contactEmail != "" {
+		email = contactEmail
+	}
+
+	if email == "" {
+		return nil, fmt.Errorf("missing required email field")
+	}
+
+	payload := &committeeservice.UpdateCommitteeMemberPayload{
+		UID:       committeeUID,
+		MemberUID: memberUID,
+		Email:     email,
+	}
+
+	// Map contact information.
+	if contactNameV1, ok := v1Data["contact_name__c"].(string); ok && contactNameV1 != "" {
+		// Look up user information from contact mapping if available.
+		// For now, we'll extract what we can from the platform-community record.
+		payload.Username = extractUsernameFromEmail(email)
+	}
+
+	// Map job title.
+	if title, ok := v1Data["title"].(string); ok && title != "" {
+		payload.JobTitle = &title
+	}
+
+	// Map committee role information.
+	roleStruct := &struct {
+		Name      string  `json:"name"`
+		StartDate *string `json:"start_date,omitempty"`
+		EndDate   *string `json:"end_date,omitempty"`
+	}{}
+
+	if role, ok := v1Data["role__c"].(string); ok && role != "" {
+		roleStruct.Name = role
+	} else {
+		roleStruct.Name = "Member" // Default role.
+	}
+
+	if startDate, ok := v1Data["start_date__c"].(string); ok && startDate != "" {
+		dateOnly := extractDateOnly(startDate)
+		if dateOnly != "" {
+			roleStruct.StartDate = &dateOnly
+		}
+	}
+
+	if endDate, ok := v1Data["end_date__c"].(string); ok && endDate != "" {
+		dateOnly := extractDateOnly(endDate)
+		if dateOnly != "" {
+			roleStruct.EndDate = &dateOnly
+		}
+	}
+
+	payload.Role = &struct {
+		Name      string
+		StartDate *string
+		EndDate   *string
+	}{
+		Name:      roleStruct.Name,
+		StartDate: roleStruct.StartDate,
+		EndDate:   roleStruct.EndDate,
+	}
+
+	// Map appointed by.
+	if appointedBy, ok := v1Data["appointed_by__c"].(string); ok && appointedBy != "" {
+		payload.AppointedBy = appointedBy
+	} else {
+		payload.AppointedBy = "Unknown" // Default value.
+	}
+
+	// Map status.
+	if status, ok := v1Data["status__c"].(string); ok && status != "" {
+		payload.Status = status
+	} else {
+		payload.Status = "Active" // Default status.
+	}
+
+	// Map voting information.
+	votingStruct := &struct {
+		Status    string  `json:"status"`
+		StartDate *string `json:"start_date,omitempty"`
+		EndDate   *string `json:"end_date,omitempty"`
+	}{}
+
+	if votingStatus, ok := v1Data["voting_status__c"].(string); ok && votingStatus != "" {
+		votingStruct.Status = votingStatus
+	} else {
+		votingStruct.Status = "Non-Voting" // Default voting status.
+	}
+
+	if votingStartDate, ok := v1Data["voting_start_date__c"].(string); ok && votingStartDate != "" {
+		dateOnly := extractDateOnly(votingStartDate)
+		if dateOnly != "" {
+			votingStruct.StartDate = &dateOnly
+		}
+	}
+
+	if votingEndDate, ok := v1Data["voting_end_date__c"].(string); ok && votingEndDate != "" {
+		dateOnly := extractDateOnly(votingEndDate)
+		if dateOnly != "" {
+			votingStruct.EndDate = &dateOnly
+		}
+	}
+
+	payload.Voting = &struct {
+		Status    string
+		StartDate *string
+		EndDate   *string
+	}{
+		Status:    votingStruct.Status,
+		StartDate: votingStruct.StartDate,
+		EndDate:   votingStruct.EndDate,
+	}
+
+	// Map GAC-specific fields.
+	if country, ok := v1Data["country"].(string); ok && country != "" {
+		payload.Country = &country
+	}
+
+	if agency, ok := v1Data["agency"].(string); ok && agency != "" {
+		payload.Agency = &agency
+	}
+
+	// Map organization information.
+	if accountSFID, ok := v1Data["account__c"].(string); ok && accountSFID != "" {
+		// Look up organization information from account mapping if available.
+		// For now, we'll use placeholder organization structure.
+		orgStruct := &struct {
+			Name    *string `json:"name,omitempty"`
+			Website *string `json:"website,omitempty"`
+		}{}
+
+		// Try to get organization name from mappings or use account SFID as fallback.
+		orgName := fmt.Sprintf("Organization-%s", accountSFID)
+		orgStruct.Name = &orgName
+
+		payload.Organization = &struct {
+			Name    *string
+			Website *string
+		}{
+			Name:    orgStruct.Name,
+			Website: orgStruct.Website,
+		}
+	}
+
+	return payload, nil
+}
+
+// extractUsernameFromEmail extracts a potential username from an email address.
+// This is a placeholder implementation - in practice, you might want to look this up
+// from a user service or mapping table.
+func extractUsernameFromEmail(email string) *string {
+	if email == "" {
+		return nil
+	}
+
+	// Simple extraction: take part before @ symbol.
+	parts := strings.Split(email, "@")
+	if len(parts) > 0 && parts[0] != "" {
+		username := parts[0]
+		return &username
+	}
+
+	return nil
 }

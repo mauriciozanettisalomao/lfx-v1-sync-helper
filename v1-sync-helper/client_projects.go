@@ -12,7 +12,7 @@ import (
 )
 
 // fetchProjectBase fetches an existing project base from the Project Service API.
-func fetchProjectBase(ctx context.Context, projectUID string) (*projectservice.ProjectBase, string, error) {
+var fetchProjectBase = func(ctx context.Context, projectUID string) (*projectservice.ProjectBase, string, error) {
 	token, err := generateCachedJWTToken(projectServiceAudience, UserInfo{})
 	if err != nil {
 		return nil, "", err

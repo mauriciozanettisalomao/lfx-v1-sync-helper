@@ -1,6 +1,3 @@
-// Copyright The Linux Foundation and each contributor to LFX.
-// SPDX-License-Identifier: MIT
-
 // The v1-sync-helper service.
 package main
 
@@ -40,13 +37,15 @@ func getRootProjectUID(ctx context.Context) (string, error) {
 	return rootUID, nil
 }
 
-// shouldSkipSync checks if the record was last modified by this service and should be skipped.
+// shouldSkipSync checks if the record was last modified by this service and
+// should be skipped, because it originated in v2, and therefore does not need
+// to be synced from v1.
 func shouldSkipSync(ctx context.Context, v1Data map[string]any) bool {
 	if lastModifiedBy, ok := v1Data["lastmodifiedbyid"].(string); ok && lastModifiedBy != "" {
 		// Check if the lastmodifiedbyid matches our Auth0 Client ID with @clients suffix.
-		expectedServiceID := cfg.Auth0ClientID + "@clients"
-		if lastModifiedBy == expectedServiceID {
-			logger.With("lastmodifiedbyid", lastModifiedBy, "service_id", expectedServiceID).DebugContext(ctx, "skipping sync - record was last modified by this service")
+		ourServiceID := cfg.Auth0ClientID + "@clients"
+		if lastModifiedBy == ourServiceID {
+			logger.With("lastmodifiedbyid", lastModifiedBy).DebugContext(ctx, "skipping record that originated in v2")
 			return true
 		}
 	}
@@ -123,6 +122,8 @@ func handleKVPut(ctx context.Context, entry jetstream.KeyValueEntry, v1KV jetstr
 		handleProjectUpdate(ctx, key, v1Data, userInfo, mappingsKV)
 	} else if strings.HasPrefix(key, "platform-collaboration__c.") {
 		handleCommitteeUpdate(ctx, key, v1Data, userInfo, mappingsKV)
+	} else if strings.HasPrefix(key, "platform-community__c.") {
+		handleCommitteeMemberUpdate(ctx, key, v1Data, userInfo, mappingsKV)
 	} else {
 		logger.With("key", key).DebugContext(ctx, "unknown object type, ignoring")
 	}
@@ -135,4 +136,20 @@ func handleKVDelete(ctx context.Context, entry jetstream.KeyValueEntry, v1KV jet
 	// For deletes, we would need to look up the mapping and call delete APIs
 	// This is a simplified implementation
 	logger.With("key", key).InfoContext(ctx, "delete operation not yet implemented")
+}
+
+// extractDateOnly extracts the date part from an ISO 8601 datetime string.
+// Input: "2020-03-01T00:00:00+00:00"
+// Output: "2020-03-01"
+func extractDateOnly(dateTimeStr string) string {
+	if dateTimeStr == "" {
+		return ""
+	}
+
+	// Extract just the date part from ISO 8601 datetime format.
+	if datePart := strings.Split(dateTimeStr, "T")[0]; datePart != "" {
+		return datePart
+	}
+
+	return ""
 }

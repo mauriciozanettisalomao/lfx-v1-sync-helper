@@ -203,8 +203,7 @@ func mapV1DataToProjectCreatePayload(ctx context.Context, v1Data map[string]any,
 
 	// Map formation date (start_date__c).
 	if startDate, ok := v1Data["start_date__c"].(string); ok && startDate != "" {
-		// Extract just the date part from ISO 8601 datetime format.
-		if dateOnly := strings.Split(startDate, "T")[0]; dateOnly != "" {
+		if dateOnly := extractDateOnly(startDate); dateOnly != "" {
 			payload.FormationDate = &dateOnly
 		}
 	}
@@ -234,8 +233,7 @@ func mapV1DataToProjectCreatePayload(ctx context.Context, v1Data map[string]any,
 
 	// Map entity dissolution date.
 	if dissolutionDate, ok := v1Data["project_entity_dissolution_date__c"].(string); ok && dissolutionDate != "" {
-		// Extract just the date part from ISO 8601 datetime format.
-		if dateOnly := strings.Split(dissolutionDate, "T")[0]; dateOnly != "" {
+		if dateOnly := extractDateOnly(dissolutionDate); dateOnly != "" {
 			payload.EntityDissolutionDate = &dateOnly
 		}
 	}
@@ -271,8 +269,7 @@ func mapV1DataToProjectCreatePayload(ctx context.Context, v1Data map[string]any,
 	}
 
 	if announcementDate, ok := v1Data["expected_announcement_date__c"].(string); ok && announcementDate != "" {
-		// Extract just the date part from ISO 8601 datetime format.
-		if dateOnly := strings.Split(announcementDate, "T")[0]; dateOnly != "" {
+		if dateOnly := extractDateOnly(announcementDate); dateOnly != "" {
 			payload.AnnouncementDate = &dateOnly
 		}
 	}
@@ -379,8 +376,7 @@ func mapV1DataToProjectUpdateBasePayload(ctx context.Context, projectUID string,
 
 	// Map formation date (start_date__c).
 	if startDate, ok := v1Data["start_date__c"].(string); ok && startDate != "" {
-		// Extract just the date part from ISO 8601 datetime format.
-		if dateOnly := strings.Split(startDate, "T")[0]; dateOnly != "" {
+		if dateOnly := extractDateOnly(startDate); dateOnly != "" {
 			payload.FormationDate = &dateOnly
 		}
 	}
@@ -410,8 +406,7 @@ func mapV1DataToProjectUpdateBasePayload(ctx context.Context, projectUID string,
 
 	// Map entity dissolution date.
 	if dissolutionDate, ok := v1Data["project_entity_dissolution_date__c"].(string); ok && dissolutionDate != "" {
-		// Extract just the date part from ISO 8601 datetime format.
-		if dateOnly := strings.Split(dissolutionDate, "T")[0]; dateOnly != "" {
+		if dateOnly := extractDateOnly(dissolutionDate); dateOnly != "" {
 			payload.EntityDissolutionDate = &dateOnly
 		}
 	}
@@ -504,8 +499,7 @@ func mapV1DataToProjectUpdateSettingsPayload(ctx context.Context, projectUID str
 
 	// Map announcement date.
 	if announcementDate, ok := v1Data["expected_announcement_date__c"].(string); ok && announcementDate != "" {
-		// Extract just the date part from ISO 8601 datetime format.
-		if dateOnly := strings.Split(announcementDate, "T")[0]; dateOnly != "" {
+		if dateOnly := extractDateOnly(announcementDate); dateOnly != "" {
 			payload.AnnouncementDate = &dateOnly
 		}
 	}
