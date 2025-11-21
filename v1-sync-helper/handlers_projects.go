@@ -1,3 +1,6 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
 // Project-specific handlers for the v1-sync-helper service.
 package main
 
@@ -168,10 +171,6 @@ func mapV1DataToProjectCreatePayload(ctx context.Context, v1Data map[string]any,
 		payload.Description = desc
 	}
 
-	if public, ok := v1Data["public__c"].(bool); ok {
-		payload.Public = &public
-	}
-
 	// Map category from admin_category__c with filtering.
 	if adminCategory, ok := v1Data["admin_category__c"].(string); ok {
 		payload.Category = mapAdminCategoryToCategory(adminCategory)
@@ -257,7 +256,12 @@ func mapV1DataToProjectCreatePayload(ctx context.Context, v1Data map[string]any,
 			payload.LegalParentUID = &legalParentUID
 			logger.With("parent_entity_sfid", parentEntityID, "legal_parent_uid", legalParentUID).DebugContext(ctx, "found legal parent UID from SFID mapping")
 		} else {
-			logger.With("parent_entity_sfid", parentEntityID, errKey, err).WarnContext(ctx, "could not find parent entity UID in mappings, leaving LegalParentUID empty")
+			// We cannot sync this if the legal parent's v2 UID is not found in
+			// mappings.  Return an error. Ordinarily, we expect updates to come "in
+			// order". In v1 you cannot set a legal parent to a project you haven't
+			// created yet!  On the other hand, this may cause problems for our
+			// *initial data backfill*, as we cannot guarantee load order.
+			return nil, fmt.Errorf("could not find legal parent UID in mappings for SFID %s", parentEntityID)
 		}
 	}
 
@@ -279,14 +283,24 @@ func mapV1DataToProjectCreatePayload(ctx context.Context, v1Data map[string]any,
 		parentProjectID = strings.TrimSpace(parentID)
 	}
 
+	// Track if the parent project should be checked for public visibility (all
+	// parents EXCEPT the root project).
+	var checkPublicParentUID string
+
 	if parentProjectID != "" {
 		// Project has a parent in V1, look up the parent's V2 UID from SFID mappings.
 		parentMappingKey := fmt.Sprintf("project.sfid.%s", parentProjectID)
 		if entry, err := mappingsKV.Get(ctx, parentMappingKey); err == nil {
 			payload.ParentUID = string(entry.Value())
+			checkPublicParentUID = payload.ParentUID
 			logger.With("parent_project_sfid", parentProjectID, "parent_uid", payload.ParentUID).DebugContext(ctx, "found parent project UID from SFID mapping")
 		} else {
-			logger.With("parent_project_sfid", parentProjectID, errKey, err).WarnContext(ctx, "could not find parent project UID in mappings, leaving ParentUID empty")
+			// We cannot sync this if the parent project's v2 UID is not found in
+			// mappings. Return an error. Ordinarily, we expect updates to come "in
+			// order". In v1 you cannot set a parent to a project you haven't created
+			// yet! On the other hand, this may cause problems for our *initial data
+			// backfill*, as we cannot guarantee load order.
+			return nil, fmt.Errorf("could not find project parent UID in mappings for SFID %s", parentProjectID)
 		}
 	} else {
 		// Project has no parent in V1, so it should be a child of ROOT in V2.
@@ -298,10 +312,17 @@ func mapV1DataToProjectCreatePayload(ctx context.Context, v1Data map[string]any,
 		logger.With("root_uid", rootUID).DebugContext(ctx, "set project parent to ROOT")
 	}
 
-	// Map project stage from project_status__c only.
+	// Map project stage (sometimes referred to as "status").
 	if stage, ok := v1Data["project_status__c"].(string); ok && stage != "" {
 		payload.Stage = &stage
 	}
+
+	// Calculate Public status based on Stage and any non-root parent project.
+	var isPublic bool
+	if payload.Stage != nil {
+		isPublic = calculatePublicStatus(ctx, *payload.Stage, checkPublicParentUID)
+	}
+	payload.Public = &isPublic
 
 	return payload, nil
 }
@@ -326,10 +347,6 @@ func mapV1DataToProjectUpdateBasePayload(ctx context.Context, projectUID string,
 		payload.Description = desc
 	}
 
-	if public, ok := v1Data["public__c"].(bool); ok {
-		payload.Public = &public
-	}
-
 	// Map category from admin_category__c with filtering.
 	if adminCategory, ok := v1Data["admin_category__c"].(string); ok {
 		payload.Category = mapAdminCategoryToCategory(adminCategory)
@@ -415,7 +432,12 @@ func mapV1DataToProjectUpdateBasePayload(ctx context.Context, projectUID string,
 			payload.LegalParentUID = &legalParentUID
 			logger.With("parent_entity_sfid", parentEntityID, "legal_parent_uid", legalParentUID).DebugContext(ctx, "found legal parent UID from SFID mapping")
 		} else {
-			logger.With("parent_entity_sfid", parentEntityID, errKey, err).WarnContext(ctx, "could not find parent entity UID in mappings, leaving LegalParentUID empty")
+			// We cannot sync this if the legal parent's v2 UID is not found in
+			// mappings.  Return an error. Ordinarily, we expect updates to come "in
+			// order". In v1 you cannot set a legal parent to a project you haven't
+			// created yet!  On the other hand, this may cause problems for our
+			// *initial data backfill*, as we cannot guarantee load order.
+			return nil, fmt.Errorf("could not find legal parent UID in mappings for SFID %s", parentEntityID)
 		}
 	}
 
@@ -425,15 +447,24 @@ func mapV1DataToProjectUpdateBasePayload(ctx context.Context, projectUID string,
 		parentProjectID = strings.TrimSpace(parentID)
 	}
 
+	// Track if the parent project should be checked for public visibility (all
+	// parents EXCEPT the root project).
+	var checkPublicParentUID string
+
 	if parentProjectID != "" {
 		// Project has a parent in V1, look up the parent's V2 UID from SFID mappings.
 		parentMappingKey := fmt.Sprintf("project.sfid.%s", parentProjectID)
 		if entry, err := mappingsKV.Get(ctx, parentMappingKey); err == nil {
-			parentUID := string(entry.Value())
-			payload.ParentUID = parentUID
-			logger.With("parent_project_sfid", parentProjectID, "parent_uid", parentUID).DebugContext(ctx, "found parent project UID from SFID mapping")
+			payload.ParentUID = string(entry.Value())
+			checkPublicParentUID = payload.ParentUID
+			logger.With("parent_project_sfid", parentProjectID, "parent_uid", payload.ParentUID).DebugContext(ctx, "found parent project UID from SFID mapping")
 		} else {
-			logger.With("parent_project_sfid", parentProjectID, errKey, err).WarnContext(ctx, "could not find parent project UID in mappings, leaving ParentUID empty")
+			// We cannot sync this if the parent project's v2 UID is not found in
+			// mappings. Return an error. Ordinarily, we expect updates to come "in
+			// order". In v1 you cannot set a parent to a project you haven't created
+			// yet! On the other hand, this may cause problems for our *initial data
+			// backfill*, as we cannot guarantee load order.
+			return nil, fmt.Errorf("could not find project parent UID in mappings for SFID %s", parentProjectID)
 		}
 	} else {
 		// Project has no parent in V1, so it should be a child of ROOT in V2.
@@ -445,10 +476,17 @@ func mapV1DataToProjectUpdateBasePayload(ctx context.Context, projectUID string,
 		logger.With("root_uid", rootUID).DebugContext(ctx, "set project parent to ROOT")
 	}
 
-	// Map project stage from project_status__c only.
+	// Map project stage (sometimes referred to as "status").
 	if stage, ok := v1Data["project_status__c"].(string); ok && stage != "" {
 		payload.Stage = &stage
 	}
+
+	// Calculate Public status based on Stage and any non-root parent project.
+	var isPublic bool
+	if payload.Stage != nil {
+		isPublic = calculatePublicStatus(ctx, *payload.Stage, checkPublicParentUID)
+	}
+	payload.Public = &isPublic
 
 	return payload, nil
 }
@@ -473,4 +511,35 @@ func mapV1DataToProjectUpdateSettingsPayload(ctx context.Context, projectUID str
 	}
 
 	return payload, nil
+}
+
+// calculatePublicStatus determines if a project should be public based on its stage and parent's public status.
+// Returns true if the stage is "Active" and the parent is either the root project (checkParentUID is empty) or is public.
+func calculatePublicStatus(ctx context.Context, stage, checkParentUID string) bool {
+	// Only Active projects can be public.
+	if stage != "Active" {
+		logger.With("stage", stage).DebugContext(ctx, "project stage is not Active, setting public to false")
+		return false
+	}
+
+	// If checkParentUID is empty, parent is the root project.
+	if checkParentUID == "" {
+		logger.DebugContext(ctx, "parent is root project, setting public to true")
+		return true
+	}
+
+	// Fetch parent project to check if it's public.
+	parentProject, _, err := fetchProjectBase(ctx, checkParentUID)
+	if err != nil {
+		logger.With("parent_uid", checkParentUID, "error", err).WarnContext(ctx, "failed to fetch parent project, defaulting public to false")
+		return false
+	}
+
+	if parentProject.Public != nil && *parentProject.Public {
+		logger.With("parent_uid", checkParentUID, "parent_public", true).DebugContext(ctx, "parent project is public, setting public to true")
+		return true
+	}
+
+	logger.With("parent_uid", checkParentUID, "parent_public", parentProject.Public != nil && *parentProject.Public).DebugContext(ctx, "parent project is not public, setting public to false")
+	return false
 }

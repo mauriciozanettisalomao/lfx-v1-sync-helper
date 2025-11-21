@@ -1,3 +1,6 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
 // Auth0 authentication and HTTP client for LFX v1 API Gateway calls
 //
 // This client handles:

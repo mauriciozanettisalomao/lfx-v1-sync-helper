@@ -1,3 +1,6 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
 // Committee-specific client operations for the v1-sync-helper service.
 package main
 

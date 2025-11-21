@@ -1,3 +1,6 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
 // The v1-sync-helper service.
 package main
 
@@ -236,8 +239,10 @@ func main() {
 	streamName := "KV_v1-objects"
 
 	consumer, err := jsContext.CreateOrUpdateConsumer(ctx, streamName, jetstream.ConsumerConfig{
-		Name:          consumerName,
-		Durable:       consumerName,
+		Name:    consumerName,
+		Durable: consumerName,
+		// Uncomment when ready in the chart (see comments in charts/lfx-v1-sync-helper/values.yaml)
+		// DeliverPolicy: jetstream.DeliverLastPerSubjectPolicy,
 		DeliverPolicy: jetstream.DeliverAllPolicy,
 		AckPolicy:     jetstream.AckExplicitPolicy,
 		FilterSubject: "$KV.v1-objects.>",

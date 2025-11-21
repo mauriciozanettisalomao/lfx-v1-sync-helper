@@ -6,6 +6,8 @@ ignore: |
   styles
   venv
   .venv
+  charts
+  meltano.yml
 rules:
   line-length:
     max: 120
