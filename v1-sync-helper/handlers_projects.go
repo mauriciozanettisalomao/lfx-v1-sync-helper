@@ -487,7 +487,7 @@ func mapV1DataToProjectUpdateBasePayload(ctx context.Context, projectUID string,
 }
 
 // mapV1DataToProjectUpdateSettingsPayload converts V1 project data to an UpdateProjectSettingsPayload.
-func mapV1DataToProjectUpdateSettingsPayload(ctx context.Context, projectUID string, v1Data map[string]any) (*projectservice.UpdateProjectSettingsPayload, error) {
+func mapV1DataToProjectUpdateSettingsPayload(_ context.Context, projectUID string, v1Data map[string]any) (*projectservice.UpdateProjectSettingsPayload, error) {
 	payload := &projectservice.UpdateProjectSettingsPayload{
 		UID: &projectUID,
 	}

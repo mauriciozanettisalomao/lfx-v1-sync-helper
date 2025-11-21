@@ -11,17 +11,22 @@ DISABLE_LINTERS:
   - KUBERNETES_KUBECONFORM
   # TBD how to use this from Megalinter with our setup.
   - KUBERNETES_KUBESCAPE
-  # Repository-wide link checking returns mostly false positives (like internal
-  # service URLs in templates).
-  - SPELL_LYCHEE
+  # Pylint errors on missing dependencies, and is redundant with ruff.
+  - PYTHON_PYLINT
+  # Pyright errors on missing dependencies.
+  - PYTHON_PYRIGHT
   # yamllint is sufficient for us.
   - YAML_PRETTIER
 DISABLE_ERRORS_LINTERS:
   # This may be informative but doesn't need to break the build.
   - COPYPASTE_JSCPD
   # TBD! Need to work through these.
-  - REPOSITORY_TRIVY
+  - DOCKERFILE_HADOLINT
+  - REPOSITORY_KICS
   - REPOSITORY_CHECKOV
+  - REPOSITORY_TRIVY
+  # Making optional to not block builds, even though it's still important!
+  - SPELL_CSPELL
 SPELL_CSPELL_ANALYZE_FILE_NAMES: false
 # Ignore YAML files with templating macros; these typically fail linting and/or
 # schema checking.

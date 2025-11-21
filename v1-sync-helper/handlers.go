@@ -1,3 +1,6 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
 // The v1-sync-helper service.
 package main
 
@@ -99,7 +102,7 @@ func kvHandler(entry jetstream.KeyValueEntry, v1KV jetstream.KeyValue, mappingsK
 }
 
 // handleKVPut processes a KV put operation (create/update)
-func handleKVPut(ctx context.Context, entry jetstream.KeyValueEntry, v1KV jetstream.KeyValue, mappingsKV jetstream.KeyValue) {
+func handleKVPut(ctx context.Context, entry jetstream.KeyValueEntry, _ jetstream.KeyValue, mappingsKV jetstream.KeyValue) {
 	key := entry.Key()
 
 	// Parse the JSON data
@@ -130,7 +133,7 @@ func handleKVPut(ctx context.Context, entry jetstream.KeyValueEntry, v1KV jetstr
 }
 
 // handleKVDelete processes a KV delete operation
-func handleKVDelete(ctx context.Context, entry jetstream.KeyValueEntry, v1KV jetstream.KeyValue, mappingsKV jetstream.KeyValue) {
+func handleKVDelete(ctx context.Context, entry jetstream.KeyValueEntry, _ jetstream.KeyValue, _ jetstream.KeyValue) {
 	key := entry.Key()
 
 	// For deletes, we would need to look up the mapping and call delete APIs
