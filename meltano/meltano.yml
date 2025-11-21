@@ -59,10 +59,10 @@ plugins:
     executable: target-nats-kv
     settings:
     - name: url
-      value: nats://localhost:4222
+      value: nats://lfx-platform-nats.lfx.svc.cluster.local:4222
       alias: host
     - name: bucket
-      value: meltano
+      value: v1-objects
     - name: user
     - name: password
       sensitive: true

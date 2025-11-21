@@ -132,7 +132,7 @@ func initV1Client(cfg *Config) error {
 
 // getUserFromV1API fetches user information from the LFX v1 User Service
 func getUserFromV1API(ctx context.Context, platformID string) (*V1User, error) {
-	url := fmt.Sprintf("%sv1/users/%s", cfg.LFXAPIGateway.String(), platformID)
+	url := fmt.Sprintf("%suser-service/v1/users/%s", cfg.LFXAPIGateway.String(), platformID)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {

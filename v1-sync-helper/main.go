@@ -161,6 +161,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Initialize Goa SDK clients for v2 services
+	if err := initGoaClients(cfg); err != nil {
+		logger.With(errKey, err).Error("error initializing Goa clients")
+		os.Exit(1)
+	}
+
 	// Initialize v1 client for Auth0 authentication
 	if err := initV1Client(cfg); err != nil {
 		logger.With(errKey, err).Error("error initializing v1 client")
