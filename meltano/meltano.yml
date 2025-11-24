@@ -69,3 +69,13 @@ plugins:
     - name: creds
       kind: file
     - name: key_prefix
+    - name: refresh_mode
+      kind: options
+      options:
+      - label: All
+        value: all
+      - label: Same or newer
+        value: same
+      - label: Newer only
+        value: newer
+      value: newer

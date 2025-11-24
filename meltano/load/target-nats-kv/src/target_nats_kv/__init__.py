@@ -52,6 +52,7 @@ def next_singer_message() -> Iterator[str]:
 async def persist_messages(
     kv_client: KeyValue,
     key_prefix: str,
+    refresh_mode: str,
 ) -> dict | None:
     """
     Process Singer messages.
@@ -162,7 +163,7 @@ async def persist_messages(
                 bookmark = bookmarks[stream]
                 if bookmark is not None and len(bookmark) > 0:
                     bookmark_attr = bookmark[0]
-            if bookmark_attr is not None:
+            if bookmark_attr is not None and refresh_mode != "full":
                 if bookmark_attr in o.record:
                     bookmark_source = o.record[bookmark_attr]
                 else:
@@ -202,8 +203,14 @@ async def persist_messages(
                         bookmark_target = ""
 
                     # Compare bookmark values as strings to determine if the
-                    # new record is newer.
-                    if str(bookmark_source) > str(bookmark_target):
+                    # new record should be refreshed based on the refresh mode.
+                    # Note, "newer" (which is the default) is implicit in the
+                    # "or" clause of this condition (if it's not "full" or
+                    # "same", it must be "newer").
+                    if (
+                        refresh_mode == "same"
+                        and str(bookmark_source) >= str(bookmark_target)
+                    ) or str(bookmark_source) > str(bookmark_target):
                         # Update with revision
                         await kv_client.update(
                             key=key,
@@ -229,7 +236,8 @@ async def persist_messages(
                         value=json.dumps(o.record).encode("utf-8"),
                     )
             else:
-                # No bookmarks for this stream, use regular put.
+                # No bookmarks for this stream, or, user has requested "full"
+                # sync, so use regular put.
                 await kv_client.put(
                     key=key,
                     value=json.dumps(o.record).encode("utf-8"),
@@ -269,6 +277,7 @@ async def run(config: dict) -> dict | None:
     user_credentials = config.get("creds", None)
     bucket = config.get("bucket", "singer")
     key_prefix = config.get("key_prefix", "")
+    refresh_mode = config.get("refresh_mode", "")
     if user_credentials is not None:
         user_credentials = Path(user_credentials)
 
@@ -288,6 +297,7 @@ async def run(config: dict) -> dict | None:
     state = await persist_messages(
         kv_client,
         key_prefix,
+        refresh_mode,
     )
     return state
 
