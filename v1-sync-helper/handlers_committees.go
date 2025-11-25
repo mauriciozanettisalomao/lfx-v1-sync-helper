@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	committeeservice "github.com/linuxfoundation/lfx-v2-committee-service/gen/committee_service"
 	"github.com/nats-io/nats.go/jetstream"
@@ -550,9 +551,24 @@ func mapV1DataToCommitteeMemberCreatePayload(ctx context.Context, committeeUID s
 			// Successfully fetched organization data.
 			orgName := org.Name
 			orgStruct := &struct {
+				ID      *string
 				Name    *string
 				Website *string
 			}{
+				// NOTE: This is highly irregular - we are adding v1 identifiers
+				// into v2. Everywhere else (except v1 meetings) we've made a
+				// clean break with new UUIDs. This v1 SFID was added to the
+				// service in order to implement external Data Lake queries.
+				// However, as we are not expecting to migrate the v1
+				// Organization Service into LFX One, this should get changed in
+				// the future. There *will* be a concept of B2B-engaged
+				// organizations managed in LFX One, requiring some kind of
+				// role-assignment journey, and thus a service that is somewhere
+				// between the v1 Organization Service and Member Service in
+				// terms of functionality. However, principally-B2C engagements
+				// like committee membership will be expected to use something
+				// like "domain" or "Clearbit ID" as the unique identifier.
+				ID:   &accountSFID,
 				Name: &orgName,
 			}
 
@@ -699,9 +715,14 @@ func mapV1DataToCommitteeMemberUpdatePayload(ctx context.Context, committeeUID, 
 			// Successfully fetched organization data.
 			orgName := org.Name
 			orgStruct := &struct {
+				ID      *string
 				Name    *string
 				Website *string
 			}{
+				// NOTE: This is highly irregular - we are adding v1 identifiers into v2.
+				// (Please see additional commentary in the corresponding code in
+				// the above mapping function for the member "create" payload.)
+				ID:   &accountSFID,
 				Name: &orgName,
 			}
 
