@@ -38,25 +38,6 @@ app:
     COMMITTEE_SERVICE_URL:
       value: http://lfx-v2-committee-service.lfx.svc.cluster.local:8080
 
-# traefik is the configuration for Traefik Gateway API routing
-traefik:
-  # gateway specifies the platform Gateway to attach to
-  gateway:
-    name: lfx-platform-gateway
-    namespace: lfx
-
-# lfx is the configuration for LFX platform
-lfx:
-  # domain is the base domain for routing
-  domain: k8s.orb.local
-  # namespace is the target namespace for deployment
-  namespace: lfx
-
-# service is the configuration for the Kubernetes service
-service:
-  # port is the service port
-  port: 8080
-
 # serviceAccount is the configuration for the Kubernetes service account
 serviceAccount:
   # create specifies whether a service account should be created
@@ -86,9 +67,9 @@ nats:
     # storage is the storage type for the KV bucket
     storage: file
     # maxValueSize is the maximum size of a value in the KV bucket
-    maxValueSize: 10485760  # 10MB
+    maxValueSize: 10485760 # 10MB
     # maxBytes is the maximum number of bytes in the KV bucket
-    maxBytes: 10737418240  # 10GB
+    maxBytes: 10737418240 # 10GB
     # compression is a boolean to determine if the KV bucket should be compressed
     compression: true
 
@@ -107,9 +88,9 @@ nats:
     # storage is the storage type for the KV bucket
     storage: file
     # maxValueSize is the maximum size of a value in the KV bucket
-    maxValueSize: 10485760  # 10MB
+    maxValueSize: 10485760 # 10MB
     # maxBytes is the maximum number of bytes in the KV bucket
-    maxBytes: 2147483648  # 2GB
+    maxBytes: 2147483648 # 2GB
     # compression is a boolean to determine if the KV bucket should be compressed
     compression: true
 

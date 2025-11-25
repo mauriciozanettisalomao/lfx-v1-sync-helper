@@ -37,7 +37,6 @@ spec:
               {{- toYaml $config.valueFrom | nindent 14 }}
             {{- end }}
           {{- end }}
-          {{- if .Values.heimdall.enabled }}
           # JWT configuration from Heimdall secret
           - name: HEIMDALL_CLIENT_ID
             valueFrom:
@@ -49,9 +48,8 @@ spec:
               secretKeyRef:
                 name: {{ .Values.heimdall.secret.name }}
                 key: {{ .Values.heimdall.secret.privateKeyKey }}
-          {{- end }}
           ports:
-            - containerPort: {{ .Values.service.port }}
+            - containerPort: 8080
               name: web
           livenessProbe:
             httpGet:

@@ -5,7 +5,7 @@
 name = "lfx-v1-sync-helper"
 version = "0.1.0"
 description = "LFX v1<>v2 data sync components"
-requires-python = ">=3.11,<3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "meltano==4.0.3",
 ]
