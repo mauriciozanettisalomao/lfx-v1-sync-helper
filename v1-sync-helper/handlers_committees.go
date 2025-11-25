@@ -7,7 +7,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	committeeservice "github.com/linuxfoundation/lfx-v2-committee-service/gen/committee_service"
 	"github.com/nats-io/nats.go/jetstream"
@@ -446,9 +445,19 @@ func mapV1DataToCommitteeMemberCreatePayload(ctx context.Context, committeeUID s
 
 	// Map contact information.
 	if contactNameV1, ok := v1Data["contact_name__c"].(string); ok && contactNameV1 != "" {
-		// Look up user information from contact mapping if available.
-		// For now, we'll extract what we can from the platform-community record.
-		payload.Username = extractUsernameFromEmail(email)
+		// Look up user information from v1 API using the SFID.
+		user, err := getUserFromV1API(ctx, contactNameV1)
+		if err != nil {
+			logger.With(errKey, err, "contact_name_sfid", contactNameV1).WarnContext(ctx, "failed to lookup user from v1 API, leaving user fields unset")
+		} else {
+			payload.Username = &user.Username
+			if user.FirstName != "" {
+				payload.FirstName = &user.FirstName
+			}
+			if user.LastName != "" {
+				payload.LastName = &user.LastName
+			}
+		}
 	}
 
 	// Map job title.
@@ -601,9 +610,19 @@ func mapV1DataToCommitteeMemberUpdatePayload(ctx context.Context, committeeUID, 
 
 	// Map contact information.
 	if contactNameV1, ok := v1Data["contact_name__c"].(string); ok && contactNameV1 != "" {
-		// Look up user information from contact mapping if available.
-		// For now, we'll extract what we can from the platform-community record.
-		payload.Username = extractUsernameFromEmail(email)
+		// Look up user information from v1 API using the SFID.
+		user, err := getUserFromV1API(ctx, contactNameV1)
+		if err != nil {
+			logger.With(errKey, err, "contact_name_sfid", contactNameV1).WarnContext(ctx, "failed to lookup user from v1 API, leaving user fields unset")
+		} else {
+			payload.Username = &user.Username
+			if user.FirstName != "" {
+				payload.FirstName = &user.FirstName
+			}
+			if user.LastName != "" {
+				payload.LastName = &user.LastName
+			}
+		}
 	}
 
 	// Map job title.
@@ -736,22 +755,4 @@ func mapV1DataToCommitteeMemberUpdatePayload(ctx context.Context, committeeUID, 
 	}
 
 	return payload, nil
-}
-
-// extractUsernameFromEmail extracts a potential username from an email address.
-// This is a placeholder implementation - in practice, you might want to look this up
-// from a user service or mapping table.
-func extractUsernameFromEmail(email string) *string {
-	if email == "" {
-		return nil
-	}
-
-	// Simple extraction: take part before @ symbol.
-	parts := strings.Split(email, "@")
-	if len(parts) > 0 && parts[0] != "" {
-		username := parts[0]
-		return &username
-	}
-
-	return nil
 }
