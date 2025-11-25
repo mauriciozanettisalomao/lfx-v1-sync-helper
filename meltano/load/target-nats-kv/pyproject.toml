@@ -1,0 +1,39 @@
+# Copyright The Linux Foundation and each contributor to LFX.
+# SPDX-License-Identifier: MIT
+
+[project]
+name = "target-nats-kv"
+version = "0.1.0"
+description = "A Singer.io target for streaming to a NATS key/value bucket"
+requires-python = ">=3.11"
+dependencies = [
+    "adjust-precision-for-schema>=0.3.4",
+    "jsonschema>=2.6.0",
+    "nats-py>=2.10.0",
+    "singer-python>=6.1.1",
+]
+
+[project.scripts]
+target-nats-kv = "target_nats_kv:main"
+
+[build-system]
+requires = ["uv_build>=0.7.6,<0.8.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.15.0",
+    "types-jsonschema>=4.23.0.20250516",
+    "types-simplejson>=3.20.0.20250326",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "UP", "B", "G", "I", "ANN"]
+
+[[tool.mypy.overrides]]
+module = ["singer.*"]
+follow_untyped_imports = true
+
+[[tool.mypy.overrides]]
+module = ["adjust_precision_for_schema.*"]
+follow_untyped_imports = true
