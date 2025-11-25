@@ -118,6 +118,9 @@ func LoadConfig() (*Config, error) {
 	if projectServiceURLStr == "" {
 		return nil, fmt.Errorf("PROJECT_SERVICE_URL environment variable is required")
 	}
+	if committeeServiceURLStr == "" {
+		return nil, fmt.Errorf("COMMITTEE_SERVICE_URL environment variable is required")
+	}
 
 	projectServiceURL, err := url.Parse(projectServiceURLStr)
 	if err != nil {
@@ -125,13 +128,11 @@ func LoadConfig() (*Config, error) {
 	}
 	cfg.ProjectServiceURL = projectServiceURL
 
-	if committeeServiceURLStr != "" {
-		committeeServiceURL, err := url.Parse(committeeServiceURLStr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse COMMITTEE_SERVICE_URL: %w", err)
-		}
-		cfg.CommitteeServiceURL = committeeServiceURL
+	committeeServiceURL, err := url.Parse(committeeServiceURLStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse COMMITTEE_SERVICE_URL: %w", err)
 	}
+	cfg.CommitteeServiceURL = committeeServiceURL
 
 	return cfg, nil
 }

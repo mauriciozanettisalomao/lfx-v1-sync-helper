@@ -1,10 +1,10 @@
-# Data source ingest project
+# LFX One data replication
 
 This is a [Meltano project](https://docs.meltano.com/concepts/project/) with a standard directory layout created with `uv run meltano init "meltano"`.
 
 ## Overview
 
-The Meltano project extracts data from LFX v1 sources and loads it into NATS Key-Value stores for processing by the LFX v2 platform. It supports extracting from multiple data sources including DynamoDB (for meetings data) and PostgreSQL (for projects and committees data).
+This Meltano project extracts data from LFX v1 sources and loads it into NATS Key-Value stores for processing by the LFX v2 platform. It supports extracting from multiple data sources including DynamoDB (for meetings data) and PostgreSQL (for projects and committees data).
 
 ## Important files
 
@@ -57,11 +57,11 @@ export TAP_POSTGRES_HOST TAP_POSTGRES_PASSWORD
 uv run meltano --environment=dev run tap-postgres target-nats-kv
 ```
 
-For other environments, replace the Postgres host & credentials, and the Meltano environment parameter.
+For other environments, replace the PostgreSQL host & credentials, and the Meltano environment parameter.
 
 ## Command modifiers
 
-Options are available that affect both the sync strategy from the source and the refresh behavior on the target. _Both options can be com
+Options are available that affect both the sync strategy from the source and the refresh behavior on the target. _These settings can be combined as needed._
 
 ### Full source refresh
 
