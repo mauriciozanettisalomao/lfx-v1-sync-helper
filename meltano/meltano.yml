@@ -79,3 +79,6 @@ plugins:
       - label: Newer only
         value: newer
       value: newer
+    - name: validate_records
+      kind: boolean
+      value: true

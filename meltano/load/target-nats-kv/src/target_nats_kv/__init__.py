@@ -53,6 +53,7 @@ async def persist_messages(
     kv_client: KeyValue,
     key_prefix: str,
     refresh_mode: str,
+    validate_records: bool = True,
 ) -> dict | None:
     """
     Process Singer messages.
@@ -114,10 +115,7 @@ async def persist_messages(
                 continue
             if primary_key_value[0] == "$":
                 logger.warning(
-                    (
-                        "Ignoring record for stream %s with "
-                        "primary key starting with $"
-                    ),
+                    "Ignoring record for stream %s with primary key starting with $",
                     stream,
                 )
                 continue
@@ -133,20 +131,21 @@ async def persist_messages(
                     )
                     continue
 
-            try:
-                validators[stream].validate(o.record)
-            except jsonschema.ValidationError as e:
-                logger.warning(
-                    (
-                        "Ignoring record %s for stream %s that fails "
-                        "schema validation: %s at .%s"
-                    ),
-                    primary_key_value,
-                    stream,
-                    e.message,
-                    ".".join(str(i) for i in e.relative_path),
-                )
-                continue
+            if validate_records:
+                try:
+                    validators[stream].validate(o.record)
+                except jsonschema.ValidationError as e:
+                    logger.warning(
+                        (
+                            "Ignoring record %s for stream %s that fails "
+                            "schema validation: %s at .%s"
+                        ),
+                        primary_key_value,
+                        stream,
+                        e.message,
+                        ".".join(str(i) for i in e.relative_path),
+                    )
+                    continue
 
             key = f"{key_prefix}{stream}.{primary_key_value}"
 
@@ -278,6 +277,7 @@ async def run(config: dict) -> dict | None:
     bucket = config.get("bucket", "singer")
     key_prefix = config.get("key_prefix", "")
     refresh_mode = config.get("refresh_mode", "")
+    validate_records = config.get("validate_records", True)
     if user_credentials is not None:
         user_credentials = Path(user_credentials)
 
@@ -298,6 +298,7 @@ async def run(config: dict) -> dict | None:
         kv_client,
         key_prefix,
         refresh_mode,
+        validate_records,
     )
     return state
 
