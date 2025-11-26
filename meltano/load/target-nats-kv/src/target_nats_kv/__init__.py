@@ -162,13 +162,9 @@ async def persist_messages(
                 bookmark = bookmarks[stream]
                 if bookmark is not None and len(bookmark) > 0:
                     bookmark_attr = bookmark[0]
-            if bookmark_attr is not None and refresh_mode != "full":
-                if bookmark_attr in o.record:
-                    bookmark_source = o.record[bookmark_attr]
-                else:
-                    bookmark_source = ""
-
-                # Compare data freshness using "bookmark" attribute.
+            if refresh_mode != "full":
+                # Compare data using either the "bookmark" or a data
+                # comparison.
                 try:
                     # Try to fetch current value.
                     current = await kv_client.get(key)
@@ -196,20 +192,48 @@ async def persist_messages(
                         )
                         continue
 
-                    if bookmark_attr in current_record:
-                        bookmark_target = current_record[bookmark_attr]
-                    else:
-                        bookmark_target = ""
+                    should_update = False
+                    if bookmark_attr is not None:
+                        # Compare bookmark values as strings to determine if the
+                        # new record should be refreshed based on the refresh mode.
+                        # Note, "newer" (which is the default) is implicit in the
+                        # "or" clause of this condition (if it's not "full" or
+                        # "same", it must be "newer").
+                        if bookmark_attr in o.record:
+                            bookmark_source = o.record[bookmark_attr]
+                        else:
+                            bookmark_source = ""
 
-                    # Compare bookmark values as strings to determine if the
-                    # new record should be refreshed based on the refresh mode.
-                    # Note, "newer" (which is the default) is implicit in the
-                    # "or" clause of this condition (if it's not "full" or
-                    # "same", it must be "newer").
-                    if (
-                        refresh_mode == "same"
-                        and str(bookmark_source) >= str(bookmark_target)
-                    ) or str(bookmark_source) > str(bookmark_target):
+                        if bookmark_attr in current_record:
+                            bookmark_target = current_record[bookmark_attr]
+                        else:
+                            bookmark_target = ""
+
+                        if (
+                            refresh_mode == "same"
+                            and str(bookmark_source) >= str(bookmark_target)
+                        ) or str(bookmark_source) > str(bookmark_target):
+                            should_update = True
+                    elif refresh_mode == "same":
+                        # If there is no bookmark, "same" means always update.
+                        should_update = True
+                    else:
+                        # No bookmark, and refresh_mode=="newer" (by process of
+                        # elimination), so, compare the data itself.
+                        target_record_filtered = {
+                            k: v
+                            for k, v in current_record.items()
+                            if not k.startswith("_sdc_")
+                        }
+                        source_record_filtered = {
+                            k: v
+                            for k, v in o.record.items()
+                            if not k.startswith("_sdc_")
+                        }
+                        if target_record_filtered != source_record_filtered:
+                            should_update = True
+
+                    if should_update:
                         # Update with revision
                         await kv_client.update(
                             key=key,
@@ -221,7 +245,7 @@ async def persist_messages(
                         logger.debug(
                             (
                                 "Skipping record for stream %s with key %s due to "
-                                "not being newer."
+                                "not needing update."
                             ),
                             stream,
                             primary_key_value,
@@ -235,8 +259,8 @@ async def persist_messages(
                         value=json.dumps(o.record).encode("utf-8"),
                     )
             else:
-                # No bookmarks for this stream, or, user has requested "full"
-                # sync, so use regular put.
+                # User has requested "full" sync, so use "put" without
+                # data checks.
                 await kv_client.put(
                     key=key,
                     value=json.dumps(o.record).encode("utf-8"),
