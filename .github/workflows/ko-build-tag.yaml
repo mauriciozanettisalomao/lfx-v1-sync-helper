@@ -35,7 +35,7 @@ jobs:
           set -euo pipefail
           APP_VERSION=$(echo ${{ github.ref_name }} | sed 's/v//g')
           CHART_NAME="$(yq '.name' charts/*/Chart.yaml)"
-          CHART_VERSION="$APP_VERISON"
+          CHART_VERSION="$(yq '.version' charts/*/Chart.yaml)"
           {
             echo "app_version=$APP_VERSION"
             echo "chart_name=$CHART_NAME"
@@ -86,6 +86,7 @@ jobs:
           repository: ${{ github.repository }}/chart
           chart_version: ${{ needs.publish.outputs.chart_version }}
           app_version: ${{ needs.publish.outputs.app_version }}
+          helm_version: "${{ env.HELM_VERSION }}"
           registry: ghcr.io
           registry_username: ${{ github.actor }}
           registry_password: ${{ secrets.GITHUB_TOKEN }}
