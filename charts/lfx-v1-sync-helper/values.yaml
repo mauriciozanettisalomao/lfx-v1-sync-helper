@@ -7,7 +7,7 @@ replicas: 1
 # image is the configuration for the container images
 image:
   # repository is the container image repository
-  repository: ghcr.io/linuxfoundation/lfx-v1-sync-helper/v1-sync-helper
+  repository: ghcr.io/linuxfoundation/lfx-v1-sync-helper/lfx-v1-sync-helper
   # tag is the container image tag (overrides appVersion from Chart.yaml)
   tag: ""
   # pullPolicy is the image pull policy
