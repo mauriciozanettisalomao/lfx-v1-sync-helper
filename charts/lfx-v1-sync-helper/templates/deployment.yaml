@@ -37,12 +37,9 @@ spec:
               {{- toYaml $config.valueFrom | nindent 14 }}
             {{- end }}
           {{- end }}
-          # JWT configuration from Heimdall secret
+          # JWT configuration from Heimdall
           - name: HEIMDALL_CLIENT_ID
-            valueFrom:
-              secretKeyRef:
-                name: {{ .Values.heimdall.secret.name }}
-                key: {{ .Values.heimdall.secret.clientIdKey }}
+            value: {{ .Values.heimdall.clientId | quote }}
           - name: HEIMDALL_PRIVATE_KEY
             valueFrom:
               secretKeyRef:

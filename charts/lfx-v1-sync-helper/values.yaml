@@ -122,15 +122,16 @@ nats:
     # filterSubject allows filtering specific keys (use ">" for all)
     filterSubject: "$KV.v1-objects.>"
 
-# heimdall is the configuration for JWT authentication and impersonation
+# heimdall is the configuration for JWT impersonation of Heimdall-authorized
+# principals for v1 data ingest.
 heimdall:
   enabled: true
   url: http://lfx-platform-heimdall.lfx.svc.cluster.local:4456
-  # secret contains the JWT configuration for authentication
+  # fallback principal for JWT impersonation, without the "@clients" suffix.
+  clientId: v1_sync_helper
+  # secret contains the configuration for JWT signing
   secret:
     # name of the secret containing JWT private key and configuration
-    name: lfx-platform-heimdall-jwt-config
-    # clientId for JWT principal and subject claims (defaults to "v1_sync_helper")
-    clientIdKey: client-id
-    # privateKey for JWT token signing
-    privateKeyKey: private-key
+    name: heimdall-signer-cert
+    # key in the secret which contains the signing certificate
+    privateKeyKey: signer.pem
