@@ -78,9 +78,10 @@ helm uninstall lfx-v1-sync-helper -n lfx
 
 ### Required Secrets
 
-The chart requires the following secrets to be created before installation:
+The chart requires the following secrets to be created before installation (if they don't already exist):
 
 1. **Heimdall JWT signing key** (default name: `heimdall-signer-cert`):
+   This secret should already exist from the LFX platform (lfx-v2-helm) umbrella chart deployment. If it doesn't exist, create it with:
    ```bash
    kubectl create secret generic heimdall-signer-cert \
        --from-file=signer.pem=/path/to/heimdall-private-key.pem \
