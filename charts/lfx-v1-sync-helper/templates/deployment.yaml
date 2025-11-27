@@ -45,6 +45,17 @@ spec:
               secretKeyRef:
                 name: {{ .Values.heimdall.secret.name }}
                 key: {{ .Values.heimdall.secret.privateKeyKey }}
+          # Auth0 configuration for v1 API authentication
+          - name: AUTH0_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.auth0.secret.name }}
+                key: {{ .Values.auth0.secret.clientIdKey }}
+          - name: AUTH0_PRIVATE_KEY
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.auth0.secret.name }}
+                key: {{ .Values.auth0.secret.privateKeyKey }}
           ports:
             - containerPort: 8080
               name: web
