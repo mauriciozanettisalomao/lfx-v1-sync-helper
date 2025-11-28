@@ -58,6 +58,7 @@ var allowedCategories = map[string]bool{
 func isProjectAllowed(ctx context.Context, v1Data map[string]any, mappingsKV jetstream.KeyValue) (bool, string) {
 	// Extract project slug.
 	slug, _ := v1Data["slug__c"].(string)
+	slug = strings.ToLower(slug)
 
 	// Check if the project's slug is in the allowlist.
 	for _, allowedSlug := range ProjectAllowlist {
@@ -92,6 +93,7 @@ func isProjectAllowed(ctx context.Context, v1Data map[string]any, mappingsKV jet
 	if err != nil {
 		return false, fmt.Sprintf("failed to get parent slug for UID %s: %v", parentUID, err)
 	}
+	parentSlug = strings.ToLower(parentSlug)
 
 	// Check if parent is one of the "overarching" grouping projects.
 	overarchingProjects := []string{"tlf", "lfprojects", "jdf"}
