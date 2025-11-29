@@ -37,6 +37,18 @@ app:
     # COMMITTEE_SERVICE_URL is required for making API calls to committee service
     COMMITTEE_SERVICE_URL:
       value: http://lfx-v2-committee-service.lfx.svc.cluster.local:8080
+    # AUTH0_TENANT is required for Auth0 authentication
+    AUTH0_TENANT:
+      value: ""
+    # HEIMDALL_KEY_ID is optional - JWT key ID (if not provided, fetches from JWKS)
+    HEIMDALL_KEY_ID:
+      value: ""
+    # HEIMDALL_JWKS_URL is optional - JWKS endpoint URL
+    HEIMDALL_JWKS_URL:
+      value: http://lfx-platform-heimdall.lfx.svc.cluster.local:4457/.well-known/jwks
+    # LFX_API_GW is optional - LFX API Gateway URL
+    LFX_API_GW:
+      value: https://api-gw.dev.platform.linuxfoundation.org/
 
 # serviceAccount is the configuration for the Kubernetes service account
 serviceAccount:
@@ -122,15 +134,27 @@ nats:
     # filterSubject allows filtering specific keys (use ">" for all)
     filterSubject: "$KV.v1-objects.>"
 
-# heimdall is the configuration for JWT authentication and impersonation
+# heimdall is the configuration for JWT impersonation of Heimdall-authorized
+# principals for v1 data ingest.
 heimdall:
   enabled: true
   url: http://lfx-platform-heimdall.lfx.svc.cluster.local:4456
-  # secret contains the JWT configuration for authentication
+  # fallback principal for JWT impersonation, without the "@clients" suffix.
+  clientId: v1_sync_helper
+  # secret contains the configuration for JWT signing
   secret:
     # name of the secret containing JWT private key and configuration
-    name: lfx-platform-heimdall-jwt-config
-    # clientId for JWT principal and subject claims (defaults to "v1_sync_helper")
+    name: heimdall-signer-cert
+    # key in the secret which contains the signing certificate
+    privateKeyKey: signer.pem
+
+# auth0 is the configuration for Auth0 authentication for v1 API calls
+auth0:
+  # secret contains the configuration for Auth0 authentication
+  secret:
+    # name of the secret containing Auth0 client ID and private key
+    name: v1-sync-helper-auth0-credentials
+    # key in the secret which contains the Auth0 client ID
     clientIdKey: client-id
-    # privateKey for JWT token signing
+    # key in the secret which contains the Auth0 private key
     privateKeyKey: private-key
