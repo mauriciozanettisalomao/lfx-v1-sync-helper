@@ -67,24 +67,27 @@ func isProjectAllowed(ctx context.Context, v1Data map[string]any, mappingsKV jet
 	}
 
 	// Extract parent SFID.
-	parentSFID, _ := v1Data["parent_sfid__c"].(string)
+	parentProjectID := ""
+	if parentID, ok := v1Data["parent_project__c"].(string); ok {
+		parentProjectID = strings.TrimSpace(parentID)
+	}
 
 	// If parent SFID is blank, this is a root-level project.
-	if parentSFID == "" {
+	if parentProjectID == "" {
 		// For root-level projects, only allow if slug is in allowlist (already checked above).
 		return false, "root-level project slug not in allowlist"
 	}
 
 	// Parent SFID is not blank - resolve it to v2 UID.
-	mappingKey := fmt.Sprintf("project.sfid.%s", parentSFID)
+	mappingKey := fmt.Sprintf("project.sfid.%s", parentProjectID)
 	entry, err := mappingsKV.Get(ctx, mappingKey)
 	if err != nil {
-		return false, fmt.Sprintf("parent SFID %s not mapped to v2 UID", parentSFID)
+		return false, fmt.Sprintf("parent SFID %s not mapped to v2 UID", parentProjectID)
 	}
 
 	parentUID := string(entry.Value())
 	if parentUID == "" {
-		return false, fmt.Sprintf("empty parent UID for SFID %s", parentSFID)
+		return false, fmt.Sprintf("empty parent UID for SFID %s", parentProjectID)
 	}
 
 	// Get the parent project's slug.
@@ -95,7 +98,7 @@ func isProjectAllowed(ctx context.Context, v1Data map[string]any, mappingsKV jet
 	parentSlug = strings.ToLower(parentSlug)
 
 	// Check if parent is one of the "overarching" grouping projects.
-	overarchingProjects := []string{"tlf", "lfprojects", "jdf"}
+	overarchingProjects := []string{"tlf", "lf-charities", "lfprojects", "jdf", "jdf-llc", "jdf-international"}
 	if slices.Contains(overarchingProjects, parentSlug) {
 		// For children of overarching projects, only allow if child slug is in allowlist.
 		return false, fmt.Sprintf("child of overarching project %s but child slug not in allowlist", parentSlug)

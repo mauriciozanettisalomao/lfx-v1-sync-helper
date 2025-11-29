@@ -14,8 +14,11 @@ import (
 // All entries should be lowercase for case-insensitive matching.
 var ProjectAllowlist = []string{
 	"tlf",
+	"lf-charities",
 	"lfprojects",
 	"jdf",
+	"jdf-llc",
+	"jdf-international",
 	"tazama",
 	"chiplet",
 	"cnab",
@@ -32,7 +35,6 @@ var ProjectAllowlist = []string{
 	"claims-and-credentials",
 	"secure-data-storage",
 	"aomedia",
-	"jdf-llc",
 	"iovisor",
 	"lfc",
 	"spdx-working-group",
@@ -45,7 +47,6 @@ var ProjectAllowlist = []string{
 	"korg",
 	"lottie-animation-community",
 	"cii",
-	"jdf-international",
 	"did-communication",
 	"3mf-working-group",
 	"call-for-code",
