@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	projectservice "github.com/linuxfoundation/lfx-v2-project-service/api/project/v1/gen/project_service"
@@ -61,10 +62,8 @@ func isProjectAllowed(ctx context.Context, v1Data map[string]any, mappingsKV jet
 	slug = strings.ToLower(slug)
 
 	// Check if the project's slug is in the allowlist.
-	for _, allowedSlug := range ProjectAllowlist {
-		if slug == allowedSlug {
-			return true, "project slug is in allowlist"
-		}
+	if slices.Contains(ProjectAllowlist, slug) {
+		return true, "project slug is in allowlist"
 	}
 
 	// Extract parent SFID.
@@ -97,11 +96,9 @@ func isProjectAllowed(ctx context.Context, v1Data map[string]any, mappingsKV jet
 
 	// Check if parent is one of the "overarching" grouping projects.
 	overarchingProjects := []string{"tlf", "lfprojects", "jdf"}
-	for _, overarching := range overarchingProjects {
-		if parentSlug == overarching {
-			// For children of overarching projects, only allow if child slug is in allowlist.
-			return false, fmt.Sprintf("child of overarching project %s but child slug not in allowlist", parentSlug)
-		}
+	if slices.Contains(overarchingProjects, parentSlug) {
+		// For children of overarching projects, only allow if child slug is in allowlist.
+		return false, fmt.Sprintf("child of overarching project %s but child slug not in allowlist", parentSlug)
 	}
 
 	// Parent is not an overarching project, so this is a child of an allowlisted project.
