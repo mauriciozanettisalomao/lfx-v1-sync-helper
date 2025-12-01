@@ -107,7 +107,6 @@ The following environment variables have defaults configured in the chart's `app
 | `COMMITTEE_SERVICE_URL` | `http://lfx-v2-committee-service.lfx.svc.cluster.local:8080` | Committee Service API URL |
 | `HEIMDALL_JWKS_URL` | `http://lfx-platform-heimdall.lfx.svc.cluster.local:4457/.well-known/jwks` | JWKS endpoint URL |
 | `LFX_API_GW` | `https://api-gw.dev.platform.linuxfoundation.org/` | LFX API Gateway URL |
-| `LOG_LEVEL` | `info` | Log level |
 | `DEBUG` | `false` | Enable debug logging |
 | `PORT` | `8080` | HTTP server port |
 | `BIND` | `*` | Interface to bind on |
