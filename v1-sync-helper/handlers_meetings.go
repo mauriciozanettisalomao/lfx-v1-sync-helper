@@ -4,8 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
-	zoomModels "github.com/linuxfoundation-it/itx-service-zoom/pkg/models"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -13,12 +14,12 @@ import (
 type MessageAction string
 
 const (
-	// MessageActionCreate indicates a new resource is being created.
-	MessageActionCreate MessageAction = "create"
-	// MessageActionUpdate indicates an existing resource is being updated.
-	MessageActionUpdate MessageAction = "update"
-	// MessageActionDelete indicates a resource is being deleted.
-	MessageActionDelete MessageAction = "delete"
+	// MessageActionCreated indicates a new resource is being created.
+	MessageActionCreated MessageAction = "created"
+	// MessageActionUpdated indicates an existing resource is being updated.
+	MessageActionUpdated MessageAction = "updated"
+	// MessageActionDeleted indicates a resource is being deleted.
+	MessageActionDeleted MessageAction = "deleted"
 )
 
 // NATS subject constants for meeting operations.
@@ -81,17 +82,17 @@ func sendIndexerMessage(ctx context.Context, subject string, action MessageActio
 
 	// Extract authorization from context if available
 	if authorization, ok := ctx.Value("authorization").(string); ok {
-		headers["Authorization"] = authorization
+		headers["authorization"] = authorization
 	} else {
 		// Fallback for system-generated events that don't have user auth context
 		// This is just a dummy value so that the indexer service can still process the message,
 		// given that it requires an authorization header.
-		headers["Authorization"] = "Bearer v1-sync-helper"
+		headers["authorization"] = "Bearer v1-sync-helper"
 	}
 
 	// Extract principal from context if available
 	if principal, ok := ctx.Value("principal").(string); ok {
-		headers["X-On-Behalf-Of"] = principal
+		headers["x-on-behalf-of"] = principal
 	}
 
 	// Construct the indexer message
@@ -146,7 +147,7 @@ type MeetingAccessMessage struct {
 }
 
 // convertMapToInputMeeting converts a map[string]any to an InputMeeting struct.
-func convertMapToInputMeeting(ctx context.Context, v1Data map[string]any) (*zoomModels.ZoomMeetingDatabase, error) {
+func convertMapToInputMeeting(ctx context.Context, v1Data map[string]any) (*MeetingInput, error) {
 	// Convert map to JSON bytes
 	jsonBytes, err := json.Marshal(v1Data)
 	if err != nil {
@@ -155,10 +156,14 @@ func convertMapToInputMeeting(ctx context.Context, v1Data map[string]any) (*zoom
 	}
 
 	// Unmarshal JSON bytes into InputMeeting struct
-	var meeting zoomModels.ZoomMeetingDatabase
+	var meeting MeetingInput
 	if err := json.Unmarshal(jsonBytes, &meeting); err != nil {
 		logger.With(errKey, err).ErrorContext(ctx, "failed to unmarshal JSON into InputMeeting")
 		return nil, fmt.Errorf("failed to unmarshal JSON into InputMeeting: %w", err)
+	}
+
+	if meetingID, ok := v1Data["meeting_id"].(string); ok && meetingID != "" {
+		meeting.ID = meetingID
 	}
 
 	return &meeting, nil
@@ -188,9 +193,9 @@ func handleZoomMeetingUpdate(ctx context.Context, key string, v1Data map[string]
 	}
 
 	mappingKey := fmt.Sprintf("v1_meetings.%s", uid)
-	indexerAction := MessageActionCreate
+	indexerAction := MessageActionCreated
 	if _, err := mappingsKV.Get(ctx, mappingKey); err == nil {
-		indexerAction = MessageActionUpdate
+		indexerAction = MessageActionUpdated
 	}
 
 	tags := []string{fmt.Sprintf("topic:%s", meeting.Topic)}
@@ -214,7 +219,7 @@ func handleZoomMeetingUpdate(ctx context.Context, key string, v1Data map[string]
 	accessMsg := MeetingAccessMessage{
 		UID:        uid,
 		Public:     meeting.Visibility == "public",
-		ProjectUID: meeting.Project,
+		ProjectUID: meeting.ProjectUID,
 		Organizers: []string{},
 		Committees: committees,
 	}
@@ -338,9 +343,9 @@ func handleZoomMeetingMappingUpdate(ctx context.Context, key string, v1Data map[
 
 	// Determine indexer action based on mapping existence
 	mappingKey := fmt.Sprintf("v1_meetings.%s", meetingID)
-	indexerAction := MessageActionCreate
+	indexerAction := MessageActionCreated
 	if _, err := mappingsKV.Get(ctx, mappingKey); err == nil {
-		indexerAction = MessageActionUpdate
+		indexerAction = MessageActionUpdated
 	}
 
 	// Send meeting indexer message with the meeting data
@@ -354,7 +359,7 @@ func handleZoomMeetingMappingUpdate(ctx context.Context, key string, v1Data map[
 	accessMsg := MeetingAccessMessage{
 		UID:        meetingID,
 		Public:     meeting.Visibility == "public",
-		ProjectUID: meeting.Project,
+		ProjectUID: meeting.ProjectUID,
 		Organizers: []string{},
 		Committees: committees,
 	}
@@ -381,7 +386,7 @@ func handleZoomMeetingMappingUpdate(ctx context.Context, key string, v1Data map[
 }
 
 // convertMapToInputRegistrant converts a map[string]any to a RegistrantInput struct.
-func convertMapToInputRegistrant(ctx context.Context, v1Data map[string]any) (*zoomModels.ZoomMeetingRegistrant, error) {
+func convertMapToInputRegistrant(ctx context.Context, v1Data map[string]any) (*RegistrantInput, error) {
 	// Convert map to JSON bytes
 	jsonBytes, err := json.Marshal(v1Data)
 	if err != nil {
@@ -390,10 +395,14 @@ func convertMapToInputRegistrant(ctx context.Context, v1Data map[string]any) (*z
 	}
 
 	// Unmarshal JSON bytes into RegistrantInput struct
-	var registrant zoomModels.ZoomMeetingRegistrant
+	var registrant RegistrantInput
 	if err := json.Unmarshal(jsonBytes, &registrant); err != nil {
 		logger.With(errKey, err).ErrorContext(ctx, "failed to unmarshal JSON into RegistrantInput")
 		return nil, fmt.Errorf("failed to unmarshal JSON into RegistrantInput: %w", err)
+	}
+
+	if registrantID, ok := v1Data["registrant_id"].(string); ok && registrantID != "" {
+		registrant.ID = registrantID
 	}
 
 	return &registrant, nil
@@ -432,9 +441,9 @@ func handleZoomMeetingRegistrantUpdate(ctx context.Context, key string, v1Data m
 	}
 
 	mappingKey := fmt.Sprintf("v1_meeting_registrants.%s", registrantID)
-	indexerAction := MessageActionCreate
+	indexerAction := MessageActionCreated
 	if _, err := mappingsKV.Get(ctx, mappingKey); err == nil {
-		indexerAction = MessageActionUpdate
+		indexerAction = MessageActionUpdated
 	}
 
 	if err := sendIndexerMessage(ctx, IndexV1MeetingRegistrantSubject, indexerAction, v1Data, []string{}); err != nil {
@@ -481,7 +490,7 @@ type PastMeetingAccessMessage struct {
 }
 
 // convertMapToInputPastMeeting converts a map[string]any to a PastMeetingInput struct.
-func convertMapToInputPastMeeting(ctx context.Context, v1Data map[string]any) (*zoomModels.ZoomPastMeeting, error) {
+func convertMapToInputPastMeeting(ctx context.Context, v1Data map[string]any) (*PastMeetingInput, error) {
 	// Convert map to JSON bytes
 	jsonBytes, err := json.Marshal(v1Data)
 	if err != nil {
@@ -490,7 +499,7 @@ func convertMapToInputPastMeeting(ctx context.Context, v1Data map[string]any) (*
 	}
 
 	// Unmarshal JSON bytes into PastMeetingInput struct
-	var pastMeeting zoomModels.ZoomPastMeeting
+	var pastMeeting PastMeetingInput
 	if err := json.Unmarshal(jsonBytes, &pastMeeting); err != nil {
 		logger.With(errKey, err).ErrorContext(ctx, "failed to unmarshal JSON into PastMeetingInput")
 		return nil, fmt.Errorf("failed to unmarshal JSON into PastMeetingInput: %w", err)
@@ -523,9 +532,9 @@ func handleZoomPastMeetingUpdate(ctx context.Context, key string, v1Data map[str
 	}
 
 	mappingKey := fmt.Sprintf("v1_past_meetings.%s", uid)
-	indexerAction := MessageActionCreate
+	indexerAction := MessageActionCreated
 	if _, err := mappingsKV.Get(ctx, mappingKey); err == nil {
-		indexerAction = MessageActionUpdate
+		indexerAction = MessageActionUpdated
 	}
 
 	if err := sendIndexerMessage(ctx, IndexV1PastMeetingSubject, indexerAction, v1Data, []string{}); err != nil {
@@ -582,8 +591,8 @@ type PastMeetingParticipantAccessMessage struct {
 	IsAttended bool   `json:"is_attended"`
 }
 
-// convertMapToInputPastMeetingInvitee converts a map[string]any to a PastMeetingInviteeInput struct.
-func convertMapToInputPastMeetingInvitee(ctx context.Context, v1Data map[string]any) (*zoomModels.ZoomPastMeetingInviteeDatabase, error) {
+// convertMapToInputPastMeetingInvitee converts a map[string]any to a ZoomPastMeetingInviteeDatabase struct.
+func convertMapToInputPastMeetingInvitee(ctx context.Context, v1Data map[string]any) (*ZoomPastMeetingInviteeDatabase, error) {
 	// Convert map to JSON bytes
 	jsonBytes, err := json.Marshal(v1Data)
 	if err != nil {
@@ -591,11 +600,15 @@ func convertMapToInputPastMeetingInvitee(ctx context.Context, v1Data map[string]
 		return nil, fmt.Errorf("failed to marshal v1Data to JSON: %w", err)
 	}
 
-	// Unmarshal JSON bytes into PastMeetingInviteeInput struct
-	var invitee zoomModels.ZoomPastMeetingInviteeDatabase
+	// Unmarshal JSON bytes into ZoomPastMeetingInviteeDatabase struct
+	var invitee ZoomPastMeetingInviteeDatabase
 	if err := json.Unmarshal(jsonBytes, &invitee); err != nil {
-		logger.With(errKey, err).ErrorContext(ctx, "failed to unmarshal JSON into PastMeetingInviteeInput")
-		return nil, fmt.Errorf("failed to unmarshal JSON into PastMeetingInviteeInput: %w", err)
+		logger.With(errKey, err).ErrorContext(ctx, "failed to unmarshal JSON into ZoomPastMeetingInviteeDatabase")
+		return nil, fmt.Errorf("failed to unmarshal JSON into ZoomPastMeetingInviteeDatabase: %w", err)
+	}
+
+	if inviteeID, ok := v1Data["invitee_id"].(string); ok && inviteeID != "" {
+		invitee.ID = inviteeID
 	}
 
 	return &invitee, nil
@@ -624,17 +637,6 @@ func handleZoomPastMeetingInviteeUpdate(ctx context.Context, key string, v1Data 
 		return
 	}
 
-	mappingKey := fmt.Sprintf("v1_past_meeting_invitees.%s", inviteeID)
-	indexerAction := MessageActionCreate
-	if _, err := mappingsKV.Get(ctx, mappingKey); err == nil {
-		indexerAction = MessageActionUpdate
-	}
-
-	if err := sendIndexerMessage(ctx, IndexV1PastMeetingParticipantSubject, indexerAction, v1Data, []string{}); err != nil {
-		logger.With(errKey, err, "id", inviteeID, "key", key).ErrorContext(ctx, "failed to send invitee indexer message")
-		return
-	}
-
 	// Determine if this invitee is a host by looking up their registrant record
 	isHost := false
 	registrantID := invitee.RegistrantID
@@ -656,6 +658,17 @@ func handleZoomPastMeetingInviteeUpdate(ctx context.Context, key string, v1Data 
 		} else {
 			logger.With(errKey, err, "registrant_id", registrantID).WarnContext(ctx, "failed to fetch registrant from KV bucket")
 		}
+	}
+
+	mappingKey := fmt.Sprintf("v1_past_meeting_invitees.%s", inviteeID)
+	indexerAction := MessageActionCreated
+	if _, err := mappingsKV.Get(ctx, mappingKey); err == nil {
+		indexerAction = MessageActionUpdated
+	}
+
+	if err := sendIndexerMessage(ctx, IndexV1PastMeetingParticipantSubject, indexerAction, invitee, []string{}); err != nil {
+		logger.With(errKey, err, "id", inviteeID, "key", key).ErrorContext(ctx, "failed to send invitee indexer message")
+		return
 	}
 
 	// For invitees, is_invited is always true since they are invitees
@@ -683,7 +696,44 @@ func handleZoomPastMeetingInviteeUpdate(ctx context.Context, key string, v1Data 
 		}
 	}
 
-	logger.With("id", inviteeID, "meeting_and_occurrence_id", invitee.MeetingAndOccurrenceID, "key", key).DebugContext(ctx, "successfully sent invitee indexer and access messages")
+	logger.With("id", inviteeID, "meeting_and_occurrence_id", invitee.ID, "key", key).DebugContext(ctx, "successfully sent invitee indexer and access messages")
+}
+
+func convertInviteeToV2Participant(ctx context.Context, invitee *ZoomPastMeetingInviteeDatabase, isHost bool) (*V2PastMeetingParticipant, error) {
+	createdAt, err := time.Parse(time.RFC3339, invitee.CreatedAt)
+	if err != nil {
+		logger.With(errKey, err, "created_at", invitee.CreatedAt).ErrorContext(ctx, "failed to parse created_at")
+		return nil, fmt.Errorf("failed to parse created_at: %w", err)
+	}
+
+	modifiedAt, err := time.Parse(time.RFC3339, invitee.ModifiedAt)
+	if err != nil {
+		logger.With(errKey, err, "modified_at", invitee.ModifiedAt).ErrorContext(ctx, "failed to parse modified_at")
+		return nil, fmt.Errorf("failed to parse modified_at: %w", err)
+	}
+
+	pastMeetingParticipant := V2PastMeetingParticipant{
+		UID:                invitee.ID,
+		PastMeetingUID:     invitee.MeetingAndOccurrenceID,
+		MeetingUID:         invitee.MeetingID,
+		Email:              invitee.Email,
+		FirstName:          invitee.FirstName,
+		LastName:           invitee.LastName,
+		Host:               isHost,
+		JobTitle:           invitee.JobTitle,
+		OrgName:            invitee.Org,
+		OrgIsMember:        *invitee.OrgIsMember,
+		OrgIsProjectMember: *invitee.OrgIsProjectMember,
+		AvatarURL:          invitee.ProfilePicture,
+		Username:           invitee.LFSSO,
+		IsInvited:          true,
+		IsAttended:         false,                  // TODO: we need to ensure that the invitee event is handled before the attendee event so that this value doesn't get reset if the order is reversed
+		Sessions:           []ParticipantSession{}, // TODO: we need to determine the sessions for the invitee from the attendee event
+		CreatedAt:          &createdAt,
+		UpdatedAt:          &modifiedAt,
+	}
+
+	return &pastMeetingParticipant, nil
 }
 
 // convertMapToInputPastMeetingAttendee converts a map[string]any to a PastMeetingAttendeeInput struct.
@@ -728,17 +778,6 @@ func handleZoomPastMeetingAttendeeUpdate(ctx context.Context, key string, v1Data
 		return
 	}
 
-	mappingKey := fmt.Sprintf("v1_past_meeting_attendees.%s", attendeeID)
-	indexerAction := MessageActionCreate
-	if _, err := mappingsKV.Get(ctx, mappingKey); err == nil {
-		indexerAction = MessageActionUpdate
-	}
-
-	if err := sendIndexerMessage(ctx, IndexV1PastMeetingParticipantSubject, indexerAction, v1Data, []string{}); err != nil {
-		logger.With(errKey, err, "id", attendeeID, "key", key).ErrorContext(ctx, "failed to send attendee indexer message")
-		return
-	}
-
 	// Determine if this attendee is a host by looking up their registrant record
 	isHost := false
 	isRegistrant := false
@@ -762,6 +801,17 @@ func handleZoomPastMeetingAttendeeUpdate(ctx context.Context, key string, v1Data
 		} else {
 			logger.With(errKey, err, "registrant_id", registrantID).WarnContext(ctx, "failed to fetch registrant from KV bucket")
 		}
+	}
+
+	mappingKey := fmt.Sprintf("v1_past_meeting_attendees.%s", attendeeID)
+	indexerAction := MessageActionCreated
+	if _, err := mappingsKV.Get(ctx, mappingKey); err == nil {
+		indexerAction = MessageActionUpdated
+	}
+
+	if err := sendIndexerMessage(ctx, IndexV1PastMeetingParticipantSubject, indexerAction, v1Data, []string{}); err != nil {
+		logger.With(errKey, err, "id", attendeeID, "key", key).ErrorContext(ctx, "failed to send attendee indexer message")
+		return
 	}
 
 	// For attendees, is_attended is always true since they attended the meeting
@@ -792,10 +842,68 @@ func handleZoomPastMeetingAttendeeUpdate(ctx context.Context, key string, v1Data
 	logger.With("id", attendeeID, "meeting_and_occurrence_id", attendee.MeetingAndOccurrenceID, "key", key).DebugContext(ctx, "successfully sent attendee indexer and access messages")
 }
 
+func convertAttendeeToV2Participant(ctx context.Context, attendee *PastMeetingAttendeeInput, isHost bool, isRegistrant bool) (*V2PastMeetingParticipant, error) {
+	createdAt, err := time.Parse(time.RFC3339, attendee.CreatedAt)
+	if err != nil {
+		logger.With(errKey, err, "created_at", attendee.CreatedAt).ErrorContext(ctx, "failed to parse created_at")
+		return nil, fmt.Errorf("failed to parse created_at: %w", err)
+	}
+
+	modifiedAt, err := time.Parse(time.RFC3339, attendee.ModifiedAt)
+	if err != nil {
+		logger.With(errKey, err, "modified_at", attendee.ModifiedAt).ErrorContext(ctx, "failed to parse modified_at")
+		return nil, fmt.Errorf("failed to parse modified_at: %w", err)
+	}
+
+	pastMeetingParticipant := V2PastMeetingParticipant{
+		UID:                attendee.ID,
+		PastMeetingUID:     attendee.MeetingAndOccurrenceID,
+		MeetingUID:         attendee.MeetingID,
+		Email:              attendee.Email,
+		FirstName:          strings.Split(attendee.Name, " ")[0],
+		LastName:           strings.Split(attendee.Name, " ")[1],
+		Host:               isHost,
+		JobTitle:           attendee.JobTitle,
+		OrgName:            attendee.Org,
+		OrgIsMember:        *attendee.OrgIsMember,
+		OrgIsProjectMember: *attendee.OrgIsProjectMember,
+		AvatarURL:          attendee.ProfilePicture,
+		Username:           attendee.LFSSO,
+		IsInvited:          isRegistrant,
+		IsAttended:         true,
+		Sessions:           []ParticipantSession{}, // TODO: we need to determine the sessions for the invitee from the attendee event
+		CreatedAt:          &createdAt,
+		UpdatedAt:          &modifiedAt,
+	}
+
+	for _, session := range attendee.Sessions {
+		joinTime, err := time.Parse(time.RFC3339, session.JoinTime)
+		if err != nil {
+			logger.With(errKey, err, "join_time", session.JoinTime).ErrorContext(ctx, "failed to parse join_time")
+			return nil, fmt.Errorf("failed to parse join_time: %w", err)
+		}
+
+		leaveTime, err := time.Parse(time.RFC3339, session.LeaveTime)
+		if err != nil {
+			logger.With(errKey, err, "leave_time", session.LeaveTime).ErrorContext(ctx, "failed to parse leave_time")
+			return nil, fmt.Errorf("failed to parse leave_time: %w", err)
+		}
+
+		pastMeetingParticipant.Sessions = append(pastMeetingParticipant.Sessions, ParticipantSession{
+			UID:         session.ParticipantUUID,
+			JoinTime:    joinTime,
+			LeaveTime:   &leaveTime,
+			LeaveReason: session.LeaveReason,
+		})
+	}
+
+	return &pastMeetingParticipant, nil
+}
+
 // PastMeetingRecordingAccessMessage is the schema for the data in the message sent to the fga-sync service.
 // These are the fields that the fga-sync service needs in order to update the OpenFGA permissions for recordings.
 type PastMeetingRecordingAccessMessage struct {
-	UID                string              `json:"uid"`
+	ID                 string              `json:"id"`
 	PastMeetingUID     string              `json:"past_meeting_uid"`
 	ArtifactVisibility string              `json:"artifact_visibility"`
 	Participants       []AccessParticipant `json:"participants"`
@@ -804,7 +912,7 @@ type PastMeetingRecordingAccessMessage struct {
 // PastMeetingTranscriptAccessMessage is the schema for the data in the message sent to the fga-sync service.
 // These are the fields that the fga-sync service needs in order to update the OpenFGA permissions for transcripts.
 type PastMeetingTranscriptAccessMessage struct {
-	UID                string              `json:"uid"`
+	ID                 string              `json:"id"`
 	PastMeetingUID     string              `json:"past_meeting_uid"`
 	ArtifactVisibility string              `json:"artifact_visibility"`
 	Participants       []AccessParticipant `json:"participants"`
@@ -861,48 +969,22 @@ func handleZoomPastMeetingRecordingUpdate(ctx context.Context, key string, v1Dat
 
 	// Determine action based on mapping existence
 	mappingKey := fmt.Sprintf("v1_past_meeting_recordings.%s", uid)
-	indexerAction := MessageActionCreate
+	indexerAction := MessageActionCreated
 	if _, err := mappingsKV.Get(ctx, mappingKey); err == nil {
-		indexerAction = MessageActionUpdate
-	}
-
-	// Convert input to output for indexing
-	recordingOutput := PastMeetingRecordingOutput{
-		MeetingAndOccurrenceID: recordingInput.MeetingAndOccurrenceID,
-		ProjectID:              recordingInput.ProjectID,
-		ProjectSlug:            recordingInput.ProjectSlug,
-		HostEmail:              recordingInput.HostEmail,
-		HostID:                 recordingInput.HostID,
-		MeetingID:              recordingInput.MeetingID,
-		OccurrenceID:           recordingInput.OccurrenceID,
-		RecordingAccess:        recordingInput.RecordingAccess,
-		Topic:                  recordingInput.Topic,
-		TranscriptAccess:       recordingInput.TranscriptAccess,
-		TranscriptEnabled:      recordingInput.TranscriptEnabled,
-		Visibility:             recordingInput.Visibility,
-		RecordingCount:         recordingInput.RecordingCount,
-		RecordingFiles:         recordingInput.RecordingFiles,
-		Sessions:               recordingInput.Sessions,
-		StartTime:              recordingInput.StartTime,
-		TotalSize:              recordingInput.TotalSize,
-		CreatedAt:              recordingInput.CreatedAt,
-		ModifiedAt:             recordingInput.ModifiedAt,
-		CreatedBy:              recordingInput.CreatedBy,
-		UpdatedBy:              recordingInput.UpdatedBy,
+		indexerAction = MessageActionUpdated
 	}
 
 	// Send recording indexer message
-	if err := sendIndexerMessage(ctx, IndexV1PastMeetingRecordingSubject, indexerAction, recordingOutput, nil); err != nil {
+	if err := sendIndexerMessage(ctx, IndexV1PastMeetingRecordingSubject, indexerAction, recordingInput, nil); err != nil {
 		logger.With(errKey, err, "uid", uid, "key", key).ErrorContext(ctx, "failed to send recording indexer message")
 		return
 	}
 
 	// Construct recording access message
 	recordingAccessMsg := PastMeetingRecordingAccessMessage{
-		UID:                uid,
+		ID:                 uid,
 		PastMeetingUID:     uid,
 		ArtifactVisibility: string(recordingInput.RecordingAccess),
-		Participants:       []AccessParticipant{}, // TODO: figure out how to get the participants from the past meeting
 	}
 
 	// Marshal recording access message
@@ -919,17 +1001,16 @@ func handleZoomPastMeetingRecordingUpdate(ctx context.Context, key string, v1Dat
 	}
 
 	// Send transcript indexer message
-	if err := sendIndexerMessage(ctx, IndexV1PastMeetingTranscriptSubject, indexerAction, recordingOutput, nil); err != nil {
+	if err := sendIndexerMessage(ctx, IndexV1PastMeetingTranscriptSubject, indexerAction, recordingInput, nil); err != nil {
 		logger.With(errKey, err, "uid", uid, "key", key).ErrorContext(ctx, "failed to send transcript indexer message")
 		return
 	}
 
 	// Construct transcript access message
 	transcriptAccessMsg := PastMeetingTranscriptAccessMessage{
-		UID:                uid,
+		ID:                 uid,
 		PastMeetingUID:     uid,
 		ArtifactVisibility: string(recordingInput.TranscriptAccess),
-		Participants:       []AccessParticipant{}, // TODO: figure out how to get the participants from the past meeting
 	}
 
 	// Marshal transcript access message
@@ -957,10 +1038,9 @@ func handleZoomPastMeetingRecordingUpdate(ctx context.Context, key string, v1Dat
 // PastMeetingSummaryAccessMessage is the schema for the data in the message sent to the fga-sync service.
 // These are the fields that the fga-sync service needs in order to update the OpenFGA permissions for summaries.
 type PastMeetingSummaryAccessMessage struct {
-	UID                string              `json:"uid"`
-	PastMeetingUID     string              `json:"past_meeting_uid"`
-	ArtifactVisibility string              `json:"artifact_visibility"`
-	Participants       []AccessParticipant `json:"participants"`
+	ID                 string `json:"id"`
+	PastMeetingUID     string `json:"past_meeting_uid"`
+	ArtifactVisibility string `json:"artifact_visibility"`
 }
 
 // convertMapToInputPastMeetingSummary converts a map[string]any to a PastMeetingSummaryInput struct.
@@ -1008,45 +1088,13 @@ func handleZoomPastMeetingSummaryUpdate(ctx context.Context, key string, v1Data 
 
 	// Determine action based on mapping existence
 	mappingKey := fmt.Sprintf("v1_past_meeting_summaries.%s", uid)
-	indexerAction := MessageActionCreate
+	indexerAction := MessageActionCreated
 	if _, err := mappingsKV.Get(ctx, mappingKey); err == nil {
-		indexerAction = MessageActionUpdate
-	}
-
-	// Convert input to output for indexing
-	summaryOutput := PastMeetingSummaryOutput{
-		ID:                      summaryInput.ID,
-		MeetingAndOccurrenceID:  summaryInput.MeetingAndOccurrenceID,
-		MeetingID:               summaryInput.MeetingID,
-		OccurrenceID:            summaryInput.OccurrenceID,
-		ZoomMeetingUUID:         summaryInput.ZoomMeetingUUID,
-		ZoomMeetingHostID:       summaryInput.ZoomMeetingHostID,
-		ZoomMeetingHostEmail:    summaryInput.ZoomMeetingHostEmail,
-		ZoomMeetingTopic:        summaryInput.ZoomMeetingTopic,
-		ZoomWebhookEvent:        summaryInput.ZoomWebhookEvent,
-		Password:                summaryInput.Password,
-		SummaryCreatedTime:      summaryInput.SummaryCreatedTime,
-		SummaryLastModifiedTime: summaryInput.SummaryLastModifiedTime,
-		SummaryStartTime:        summaryInput.SummaryStartTime,
-		SummaryEndTime:          summaryInput.SummaryEndTime,
-		SummaryTitle:            summaryInput.SummaryTitle,
-		SummaryOverview:         summaryInput.SummaryOverview,
-		SummaryDetails:          summaryInput.SummaryDetails,
-		NextSteps:               summaryInput.NextSteps,
-		EditedSummaryOverview:   summaryInput.EditedSummaryOverview,
-		EditedSummaryDetails:    summaryInput.EditedSummaryDetails,
-		EditedNextSteps:         summaryInput.EditedNextSteps,
-		RequiresApproval:        summaryInput.RequiresApproval,
-		Approved:                summaryInput.Approved,
-		EmailSent:               summaryInput.EmailSent,
-		CreatedAt:               summaryInput.CreatedAt,
-		CreatedBy:               summaryInput.CreatedBy,
-		ModifiedAt:              summaryInput.ModifiedAt,
-		ModifiedBy:              summaryInput.ModifiedBy,
+		indexerAction = MessageActionUpdated
 	}
 
 	// Send summary indexer message
-	if err := sendIndexerMessage(ctx, IndexV1PastMeetingSummarySubject, indexerAction, summaryOutput, nil); err != nil {
+	if err := sendIndexerMessage(ctx, IndexV1PastMeetingSummarySubject, indexerAction, summaryInput, nil); err != nil {
 		logger.With(errKey, err, "uid", uid, "key", key).ErrorContext(ctx, "failed to send summary indexer message")
 		return
 	}
@@ -1070,10 +1118,9 @@ func handleZoomPastMeetingSummaryUpdate(ctx context.Context, key string, v1Data 
 	}
 
 	summaryAccessMsg := PastMeetingSummaryAccessMessage{
-		UID:                uid,
+		ID:                 uid,
 		PastMeetingUID:     summaryInput.MeetingAndOccurrenceID,
 		ArtifactVisibility: aiSummaryAccess,
-		Participants:       []AccessParticipant{},
 	}
 
 	// Marshal summary access message

@@ -1,6 +1,6 @@
 package main
 
-import "github.com/linuxfoundation-it/itx-service-zoom/pkg/consts"
+import "time"
 
 // CreatedBy represents the user that created a resource.
 type CreatedBy struct {
@@ -44,10 +44,12 @@ type Committee struct {
 	Filters []string `json:"filters,omitempty"`
 }
 
-// OutputMeeting represents the meeting data structure for the V2 system to be indexed.
-type OutputMeeting struct {
+type MeetingInput struct {
 	// ID is the meeting ID (can be a UUID or numeric ID)
 	ID string `json:"id"`
+
+	// MeetingID is the numeric Zoom meeting ID
+	MeetingID string `json:"meeting_id"`
 
 	// Topic is the topic/title of the meeting
 	Topic string `json:"topic"`
@@ -87,9 +89,6 @@ type OutputMeeting struct {
 
 	// Duration is the meeting duration in minutes
 	Duration int `json:"duration"`
-
-	// MeetingID is the numeric Zoom meeting ID
-	MeetingID string `json:"meeting_id"`
 
 	// RecordingAccess is the access level for recordings
 	RecordingAccess string `json:"recording_access,omitempty"`
@@ -165,10 +164,12 @@ type ZoomMeetingMappingDB struct {
 	CommitteeFilters []string `dynamodbav:"committee_filters"`
 }
 
-// RegistrantOutput is the schema for a meeting registrant in DynamoDB table
-type RegistrantOutput struct {
-	// ID is the partition key of the registrant (it is a UUID)
-	ID string `json:"id" dynamodbav:"registrant_id"`
+type RegistrantInput struct {
+	// ID is the [RegistrantID] attribute renamed
+	ID string `json:"id"` // v2 attribute
+
+	// RegistrantID is the partition key of the registrant (it is a UUID)
+	RegistrantID string `json:"registrant_id" dynamodbav:"registrant_id"`
 
 	// MeetingID is the ID of the meeting that the registrant is associated with.
 	// It is a Global Secondary Index on the registrant table.
@@ -273,14 +274,7 @@ type RegistrantOutput struct {
 	UpdatedBy UpdatedBy `json:"updated_by" dynamodbav:"updated_by"`
 }
 
-// PastMeetingOutput represents the schema for a past meeting in DynamoDB.
-// A past meeting record is essentially a historical meeting record that gets created once a meeting
-// occurrence happens in Zoom (or gets created manually via the ITX API to track meetings outside of Zoom).
-// A record is associated with a specific occurrence of a meeting if it is recurring. The details stored
-// in the record are the details of the meeting at the time of the occurrence, so for example the topic,
-// recording access, etc. could have changed since the meeting occurred but this record will still have
-// the historical details.
-type PastMeetingOutput struct {
+type PastMeetingInput struct {
 	// MeetingAndOccurrenceID is the primary key of the past meeting table
 	// If the past meeting record is for a recurring meeting, then the value is the combination of the
 	// meeting ID and the occurrence ID (e.g. <meeting_id>:<occurrence_id>). Otherwise it is just the
@@ -393,145 +387,17 @@ type PastMeetingOutput struct {
 	UpdatedBy UpdatedBy `json:"updated_by" dynamodbav:"updated_by"`
 }
 
-// ZoomPastMeetingInvitee Used in populated webhook events sent to datalake and DynamoDB.
-// This is also used as the invitee model for past meeting data.
-// TODO: either rename this or remove it if it isn't needed anymore because it is confusing with
-// the ZoomPastMeetingInviteeDatabase struct type.
-type ZoomPastMeetingInvitee struct {
-	// UUID is the UUID of the invitee
-	UUID string `json:"uuid" dynamodbav:"uuid"`
-
-	// FirstName is the first name of the invitee
-	FirstName string `json:"first_name" dynamodbav:"first_name"`
-
-	// LastName is the last name of the invitee
-	LastName string `json:"last_name" dynamodbav:"last_name"`
-
-	// PrimaryEmail is the primary email of the invitee
-	PrimaryEmail string `json:"primary_email" dynamodbav:"primary_email"`
-
-	// ProfilePicture is the profile picture of the invitee
-	ProfilePicture string `json:"profile_picture" dynamodbav:"profile_picture"`
-
-	// SSO is the LF username of the invitee
-	SSO string `json:"lf_sso" dynamodbav:"lf_sso"`
-
-	// ID is the ID of the invitee
-	ID string `json:"lf_user_id" dynamodbav:"lf_user_id"`
-
-	// CommitteeID is the ID of the committee associated with the invitee
-	CommitteeID string `json:"committee_id" dynamodbav:"committee_id"`
-
-	// CommitteeStatus is the committee status of the invitee
-	CommitteeStatus *CommitteeStatus `json:"committee_status,omitempty" dynamodbav:"committee_status,omitempty"`
-
-	// Org is the organization of the invitee
-	Org string `json:"org" dynamodbav:"org"`
-
-	// OrgIsMember is whether the [Org] field is an organization that is a member of the Linux Foundation
-	OrgIsMember *bool `json:"org_is_member,omitempty" dynamodbav:"org_is_member,omitempty"`
-
-	// OrgIsProjectMember is whether the [Org] field is an organization that is a member of the project associated with the meeting
-	OrgIsProjectMember *bool `json:"org_is_project_member,omitempty" dynamodbav:"org_is_project_member,omitempty"`
-
-	// JobTitle is the job title of the invitee
-	JobTitle string `json:"job_title" dynamodbav:"job_title"`
-
-	// Occurrences is the list of IDs of the occurrences that the invitee is invited to
-	// This is DEPRECATED and should not be used.
-	// TODO: remove this field if it is unused in the future.
-	Occurrences []string `json:"occurrence_ids,omitempty" dynamodbav:"occurrence_ids,omitempty"`
-
-	// CreatedAt is the creation time of the invitee
-	CreatedAt string `json:"created_at" dynamodbav:"created_at"`
-
-	// ModifiedAt is the last modification time of the invitee
-	ModifiedAt string `json:"modified_at" dynamodbav:"modified_at"`
-
-	// CreatedBy is the user who created the invitee
-	CreatedBy CreatedBy `json:"created_by" dynamodbav:"created_by"`
-
-	// UpdatedBy is the user who last updated the invitee
-	UpdatedBy UpdatedBy `json:"updated_by" dynamodbav:"updated_by"`
-}
-
-// CommitteeStatus represents the committee information needed about an invitee
-type CommitteeStatus struct {
-	Role         string `json:"role" dynamodbav:"role"`
-	VotingStatus string `json:"voting_status" dynamodbav:"voting_status"`
-}
-
-// CommitteeVotingStatus is the voting status for a committee member
-type CommitteeVotingStatus string
-
-// Committee Voting Status Constants
-const (
-	// CommitteeVotingStatusVotingRep is the voting status for a voting representative
-	CommitteeVotingStatusVotingRep CommitteeVotingStatus = "Voting Rep"
-
-	// CommitteeVotingStatusAlternateVotingRep is the voting status for an alternate voting representative
-	CommitteeVotingStatusAlternateVotingRep CommitteeVotingStatus = "Alternate Voting Rep"
-
-	// CommitteeVotingStatusObserver is the voting status for an observer
-	CommitteeVotingStatusObserver CommitteeVotingStatus = "Observer"
-
-	// CommitteeVotingStatusEmeritus is the voting status for an emeritus member
-	CommitteeVotingStatusEmeritus CommitteeVotingStatus = "Emeritus"
-)
-
-// ZoomPastMeetingSession represents a single meeting instance/session
-// A meeting being started then ended is one session, then restarting it is a second session.
-type ZoomPastMeetingSession struct {
-	// UUID is the UUID of the session.
-	// This comes from Zoom when the meeting is started and ended. It is unique to each time
-	// that the meeting is run, so if the same meeting is restarted then it will have a different UUID.
-	UUID string `json:"uuid" dynamodbav:"uuid"`
-
-	// StartTime is the start time of the session in RFC3339 format
-	StartTime string `json:"start_time" dynamodbav:"start_time"`
-
-	// EndTime is the end time of the session in RFC3339 format
-	EndTime string `json:"end_time" dynamodbav:"end_time"`
-}
-
-// ZoomPastMeetingArtifact represents a a meeting artifact.
-// An artifact is a link to a url where some information about the meeting can be found.
-// For example a spreadsheet for meeting minutes or a link to an agenda can be represented
-// by this artifact model.
-type ZoomPastMeetingArtifact struct {
-	// ID is the UUID of the artifact record.
-	ID string `json:"id" dynamodbav:"id"`
-
-	// Category is the category of the artifact.
-	Category consts.ArtifactCategory `json:"category" dynamodbav:"category"`
-
-	// Link is the link to the artifact.
-	Link string `json:"link" dynamodbav:"link"`
-
-	// Name is the name of the artifact.
-	Name string `json:"name" dynamodbav:"name"`
-
-	// CreatedAt is the creation time of the artifact in RFC3339 format.
-	CreatedAt string `json:"created_at" dynamodbav:"created_at"`
-
-	// CreatedBy is the user who created the artifact.
-	CreatedBy CreatedBy `json:"created_by" dynamodbav:"created_by"`
-
-	// UpdatedAt is the last modification time of the artifact in RFC3339 format.
-	UpdatedAt string `json:"updated_at" dynamodbav:"updated_at"`
-
-	// UpdatedBy is the user who last updated the artifact.
-	UpdatedBy UpdatedBy `json:"updated_by" dynamodbav:"updated_by"`
-}
-
-// PastMeetingInviteeOutput is the schema for a past meeting invitee in DynamoDB.
+// ZoomPastMeetingInviteeDatabase is the schema for a past meeting invitee in DynamoDB.
 // Note that an invitee is a person who is a registrant of the meeting when the past meeting
 // record is created. This allows us to track the list of who was invited to a specific meeting
 // occurrence historically. If a registrant is set for only one occurrence, then they are only
 // considered an invitee for that one occurrence.
-type PastMeetingInviteeOutput struct {
+type ZoomPastMeetingInviteeDatabase struct {
+	// ID is the [InviteeID] attribute renamed
+	ID string `json:"id"` // v2 attribute
+
 	// ID is the partition key of the invitee table
-	ID string `json:"invitee_id" dynamodbav:"invitee_id"`
+	InviteeID string `json:"invitee_id" dynamodbav:"invitee_id"`
 
 	// FirstName is the first name of the invitee
 	FirstName string `json:"first_name" dynamodbav:"first_name"`
@@ -600,113 +466,73 @@ type PastMeetingInviteeOutput struct {
 	UpdatedBy UpdatedBy `json:"updated_by" dynamodbav:"updated_by"`
 }
 
-// PastMeetingAttendeeOutput is the schema for a past meeting attendee in DynamoDB.
-// Note that an attendee is a person who attends a specific occurrence of a meeting. If a meeting is unrestricted,
-// the the attendee could be someone who was not invited to the meeting. Otherwise, the attendee
-// should match an invitee for the past meeting record.
-type PastMeetingAttendeeOutput struct {
-	// ID is the partition key of the attendee table
+// CommitteeStatus represents the committee information needed about an invitee
+type CommitteeStatus struct {
+	Role         string `json:"role" dynamodbav:"role"`
+	VotingStatus string `json:"voting_status" dynamodbav:"voting_status"`
+}
+
+// CommitteeVotingStatus is the voting status for a committee member
+type CommitteeVotingStatus string
+
+// Committee Voting Status Constants
+const (
+	// CommitteeVotingStatusVotingRep is the voting status for a voting representative
+	CommitteeVotingStatusVotingRep CommitteeVotingStatus = "Voting Rep"
+
+	// CommitteeVotingStatusAlternateVotingRep is the voting status for an alternate voting representative
+	CommitteeVotingStatusAlternateVotingRep CommitteeVotingStatus = "Alternate Voting Rep"
+
+	// CommitteeVotingStatusObserver is the voting status for an observer
+	CommitteeVotingStatusObserver CommitteeVotingStatus = "Observer"
+
+	// CommitteeVotingStatusEmeritus is the voting status for an emeritus member
+	CommitteeVotingStatusEmeritus CommitteeVotingStatus = "Emeritus"
+)
+
+// ZoomPastMeetingSession represents a single meeting instance/session
+// A meeting being started then ended is one session, then restarting it is a second session.
+type ZoomPastMeetingSession struct {
+	// UUID is the UUID of the session.
+	// This comes from Zoom when the meeting is started and ended. It is unique to each time
+	// that the meeting is run, so if the same meeting is restarted then it will have a different UUID.
+	UUID string `json:"uuid" dynamodbav:"uuid"`
+
+	// StartTime is the start time of the session in RFC3339 format
+	StartTime string `json:"start_time" dynamodbav:"start_time"`
+
+	// EndTime is the end time of the session in RFC3339 format
+	EndTime string `json:"end_time" dynamodbav:"end_time"`
+}
+
+// ZoomPastMeetingArtifact represents a a meeting artifact.
+// An artifact is a link to a url where some information about the meeting can be found.
+// For example a spreadsheet for meeting minutes or a link to an agenda can be represented
+// by this artifact model.
+type ZoomPastMeetingArtifact struct {
+	// ID is the UUID of the artifact record.
 	ID string `json:"id" dynamodbav:"id"`
 
-	// ProjectID is the ID of the project associated with the attendee
-	ProjectID string `json:"proj_id" dynamodbav:"proj_id"`
+	// Category is the category of the artifact.
+	Category string `json:"category" dynamodbav:"category"`
 
-	// ProjectSlug is the slug of the project associated with the attendee
-	ProjectSlug string `json:"project_slug" dynamodbav:"project_slug"`
+	// Link is the link to the artifact.
+	Link string `json:"link" dynamodbav:"link"`
 
-	// RegistrantID is the ID of the registrant associated with the attendee.
-	// This is only populated for attendees who are registrants for the meeting.
-	RegistrantID string `json:"registrant_id" dynamodbav:"registrant_id"`
-
-	// Email is the email of the attendee.
-	// This may be empty if the attendee is not a known LF user because Zoom does not provide the email
-	// of users when they join a meeting.
-	Email string `json:"email" dynamodbav:"email"`
-
-	// Name is the full name of the attendee.
-	// If the user is not a known LF user, then the name is just the Zoom display name of the participant.
-	// Otherwise, the name comes from the LF user record.
+	// Name is the name of the artifact.
 	Name string `json:"name" dynamodbav:"name"`
 
-	// ZoomUserName is the Zoom display name of the attendee.
-	ZoomUserName string `json:"zoom_user_name" dynamodbav:"zoom_user_name"`
-
-	// MappedInviteeName is the full name of the invitee that the attendee was matched to.
-	// This is only populated if the attendee was auto-matched to an invitee.
-	MappedInviteeName string `json:"mapped_invitee_name" dynamodbav:"mapped_invitee_name"`
-
-	// LFSSO is the LF username of the attendee
-	LFSSO string `json:"lf_sso" dynamodbav:"lf_sso"`
-
-	// LFUserID is the ID of the attendee
-	LFUserID string `json:"lf_user_id" dynamodbav:"lf_user_id"`
-
-	// IsVerified is whether or not the attendee is a verified user
-	IsVerified bool `json:"is_verified" dynamodbav:"is_verified"`
-
-	// IsUnknown is whether or not the attendee has been marked as unknown attendee
-	IsUnknown bool `json:"is_unknown" dynamodbav:"is_unknown"`
-
-	// Org is the organization of the attendee
-	Org string `json:"org" dynamodbav:"org"`
-
-	// OrgIsMember is whether the [Org] field is an organization that is a member of the Linux Foundation
-	OrgIsMember *bool `json:"org_is_member,omitempty" dynamodbav:"org_is_member,omitempty"`
-
-	// OrgIsProjectMember is whether the [Org] field is an organization that is a member of the project associated with the meeting
-	OrgIsProjectMember *bool `json:"org_is_project_member,omitempty" dynamodbav:"org_is_project_member,omitempty"`
-
-	// JobTitle is the job title of the attendee
-	JobTitle string `json:"job_title" dynamodbav:"job_title"`
-
-	// CommitteeID is the ID of the committee associated with the attendee
-	CommitteeID string `json:"committee_id" dynamodbav:"committee_id"`
-
-	// IsCommitteeMember is only relevant if the past meeting is associated with a committee.
-	// It is true if the attendee is a member of that committee.
-	IsCommitteeMember bool `json:"is_committee_member" dynamodbav:"is_committee_member"`
-
-	// CommitteeRole is only relevant if the past meeting is associated with a committee.
-	// It is the role of the attendee in the committee.
-	CommitteeRole string `json:"committee_role" dynamodbav:"committee_role"`
-
-	// CommitteeVotingStatus is only relevant if the past meeting is associated with a committee.
-	// It is the voting status of the attendee in the committee.
-	CommitteeVotingStatus string `json:"committee_voting_status" dynamodbav:"committee_voting_status"`
-
-	// ProfilePicture is the profile picture of the attendee
-	ProfilePicture string `json:"profile_picture" dynamodbav:"profile_picture"`
-
-	// MeetingID is the ID of the meeting associated with the attendee
-	MeetingID string `json:"meeting_id" dynamodbav:"meeting_id"`
-
-	// OccurrenceID is the ID of the occurrence associated with the attendee
-	OccurrenceID string `json:"occurrence_id" dynamodbav:"occurrence_id"`
-
-	// MeetingAndOccurrenceID is the ID of the combined meeting and occurrence associated with the attendee
-	MeetingAndOccurrenceID string `json:"meeting_and_occurrence_id" dynamodbav:"meeting_and_occurrence_id"`
-
-	// AverageAttendance is the average attendance of the attendee as a percentage.
-	// This is the average of the [Sessions] field.
-	AverageAttendance int `json:"average_attendance,omitempty"`
-
-	// Sessions is the list of sessions associated with the attendee
-	Sessions []ZoomPastMeetingAttendeeSession `json:"sessions" dynamodbav:"sessions"`
-
-	// CreatedAt is the creation time of the attendee
+	// CreatedAt is the creation time of the artifact in RFC3339 format.
 	CreatedAt string `json:"created_at" dynamodbav:"created_at"`
 
-	// ModifiedAt is the last modification time of the attendee
-	ModifiedAt string `json:"modified_at" dynamodbav:"modified_at"`
-
-	// CreatedBy is the user who created the attendee
+	// CreatedBy is the user who created the artifact.
 	CreatedBy CreatedBy `json:"created_by" dynamodbav:"created_by"`
 
-	// UpdatedBy is the user who last updated the attendee
-	UpdatedBy UpdatedBy `json:"updated_by" dynamodbav:"updated_by"`
+	// UpdatedAt is the last modification time of the artifact in RFC3339 format.
+	UpdatedAt string `json:"updated_at" dynamodbav:"updated_at"`
 
-	// IsAutoMatched is true if the attendee name was auto-matched to a registrant's email
-	IsAutoMatched bool `json:"is_auto_matched,omitempty" dynamodbav:"is_auto_matched,omitempty"`
+	// UpdatedBy is the user who last updated the artifact.
+	UpdatedBy UpdatedBy `json:"updated_by" dynamodbav:"updated_by"`
 }
 
 // PastMeetingAttendeeInput is the schema for a past meeting attendee in DynamoDB.
@@ -715,6 +541,7 @@ type PastMeetingAttendeeOutput struct {
 // should match an invitee for the past meeting record.
 type PastMeetingAttendeeInput struct {
 	// ID is the partition key of the attendee table
+	// This is from the v1 system
 	ID string `json:"id" dynamodbav:"id"`
 
 	// ProjectID is the ID of the project associated with the attendee
@@ -835,80 +662,39 @@ type ZoomPastMeetingAttendeeSession struct {
 	LeaveReason string `json:"leave_reason" dynamodbav:"leave_reason"`
 }
 
-// PastMeetingRecordingInput is the schema for a past meeting recording in DynamoDB.
-type PastMeetingRecordingInput struct {
-	// MeetingAndOccurrenceID is the ID of the meeting and occurrence associated with the recording.
-	// This is the primary key of the recording table since there is only one recording record for a past meeting.
-	MeetingAndOccurrenceID string `json:"meeting_and_occurrence_id" dynamodbav:"meeting_and_occurrence_id"`
-
-	// ProjectID is the ID of the project associated with the recording.
-	ProjectID string `json:"proj_id" dynamodbav:"proj_id"`
-
-	// ProjectSlug is the slug of the project associated with the recording.
-	ProjectSlug string `json:"project_slug" dynamodbav:"project_slug"`
-
-	// HostEmail is the email of the host of the recorded meeting. This comes from Zoom.
-	HostEmail string `json:"host_email" dynamodbav:"host_email"`
-
-	// HostID is the Zoom user ID of the host of the recorded meeting. This comes from Zoom.
-	HostID string `json:"host_id" dynamodbav:"host_id"`
-
-	// MeetingID is the ID of the meeting associated with the recording.
-	MeetingID string `json:"meeting_id" dynamodbav:"meeting_id"`
-
-	// OccurrenceID is the ID of the occurrence associated with the recording.
-	OccurrenceID string `json:"occurrence_id" dynamodbav:"occurrence_id"`
-
-	// RecordingAccess is the access type of the recording.
-	RecordingAccess string `json:"recording_access" dynamodbav:"recording_access"`
-
-	// Topic is the topic of the recorded meeting.
-	Topic string `json:"topic" dynamodbav:"topic"`
-
-	// TranscriptAccess is the access type of the transcript of the recording.
-	TranscriptAccess string `json:"transcript_access" dynamodbav:"transcript_access"`
-
-	// TranscriptEnabled is whether the transcript of the recording is enabled.
-	TranscriptEnabled bool `json:"transcript_enabled" dynamodbav:"transcript_enabled"`
-
-	// Visibility is the visibility of the recording on the LFX platform.
-	Visibility string `json:"visibility" dynamodbav:"visibility"`
-
-	// RecordingCount is the number of recording files in the recording.
-	// A recording record can have many files due to there being multiple sessions of the same meeting,
-	// and the fact that each session has an MP4 file, M4A file, and optionally a VTT and JSON file
-	// if there is a transcript available.
-	RecordingCount int `json:"recording_count" dynamodbav:"recording_count"`
-
-	// RecordingFiles is the list of files in the recording.
-	RecordingFiles []ZoomPastMeetingRecordingFile `json:"recording_files" dynamodbav:"recording_files"`
-
-	// Sessions is the list of sessions in the recording.
-	// There can be multiple sessions in a recording due to the fact that a meeting can be restarted
-	// and that is considered a new session in Zoom.
-	Sessions []ZoomPastMeetingRecordingSession `json:"sessions" dynamodbav:"sessions"`
-
-	// StartTime is the start time of the recording in RFC3339 format.
-	StartTime string `json:"start_time" dynamodbav:"start_time"`
-
-	// TotalSize is the total size of the recording in bytes.
-	TotalSize int `json:"total_size" dynamodbav:"total_size"`
-
-	// CreatedAt is the creation time of the recording in RFC3339 format.
-	CreatedAt string `json:"created_at" dynamodbav:"created_at"`
-
-	// ModifiedAt is the last modification time of the recording in RFC3339 format.
-	ModifiedAt string `json:"modified_at" dynamodbav:"modified_at"`
-
-	// CreatedBy is the user who created the recording record in this system.
-	CreatedBy CreatedBy `json:"created_by" dynamodbav:"created_by"`
-
-	// UpdatedBy is the user who last updated the recording record in this system.
-	UpdatedBy UpdatedBy `json:"updated_by" dynamodbav:"updated_by"`
+// V2PastMeetingParticipant is the schema for a past meeting participant in the v2 system.
+type V2PastMeetingParticipant struct {
+	UID                string               `json:"uid"`
+	PastMeetingUID     string               `json:"past_meeting_uid"`
+	MeetingUID         string               `json:"meeting_uid"`
+	Email              string               `json:"email"`
+	FirstName          string               `json:"first_name"`
+	LastName           string               `json:"last_name"`
+	Host               bool                 `json:"host"`
+	JobTitle           string               `json:"job_title,omitempty"`
+	OrgName            string               `json:"org_name,omitempty"`
+	OrgIsMember        bool                 `json:"org_is_member"`
+	OrgIsProjectMember bool                 `json:"org_is_project_member"`
+	AvatarURL          string               `json:"avatar_url,omitempty"`
+	Username           string               `json:"username,omitempty"`
+	IsInvited          bool                 `json:"is_invited"`
+	IsAttended         bool                 `json:"is_attended"`
+	Sessions           []ParticipantSession `json:"sessions,omitempty"`
+	CreatedAt          *time.Time           `json:"created_at,omitempty"`
+	UpdatedAt          *time.Time           `json:"updated_at,omitempty"`
 }
 
-// PastMeetingRecordingOutput is the schema for a past meeting recording in DynamoDB.
-type PastMeetingRecordingOutput struct {
+// ParticipantSession represents a single join/leave session of a participant in a meeting
+// Participants can have multiple sessions if they join and leave multiple times
+type ParticipantSession struct {
+	UID         string     `json:"uid"`
+	JoinTime    time.Time  `json:"join_time"`
+	LeaveTime   *time.Time `json:"leave_time,omitempty"`
+	LeaveReason string     `json:"leave_reason,omitempty"`
+}
+
+// PastMeetingRecordingInput is the schema for a past meeting recording in DynamoDB.
+type PastMeetingRecordingInput struct {
 	// MeetingAndOccurrenceID is the ID of the meeting and occurrence associated with the recording.
 	// This is the primary key of the recording table since there is only one recording record for a past meeting.
 	MeetingAndOccurrenceID string `json:"meeting_and_occurrence_id" dynamodbav:"meeting_and_occurrence_id"`
@@ -1033,97 +819,6 @@ type ZoomPastMeetingRecordingFile struct {
 
 	// Status is the status of the recording file.
 	Status string `json:"status" dynamodbav:"status"`
-}
-
-// PastMeetingSummaryOutput represents a zoom meeting AI summary that is generated by Zoom
-// and stored in the database so that it can be edited and retrieved in the ITX system.
-type PastMeetingSummaryOutput struct {
-	// ID is the partition key of the summary record (it is a UUID).
-	ID string `json:"id" dynamodbav:"id"`
-
-	// MeetingAndOccurrenceID is the ID of the meeting and occurrence associated with the summary.
-	MeetingAndOccurrenceID string `json:"meeting_and_occurrence_id" dynamodbav:"meeting_and_occurrence_id"`
-
-	// MeetingID is the ID of the meeting associated with the summary.
-	MeetingID string `json:"meeting_id" dynamodbav:"meeting_id"`
-
-	// OccurrenceID is the ID of the occurrence associated with the summary.
-	OccurrenceID string `json:"occurrence_id" dynamodbav:"occurrence_id"`
-
-	// ZoomMeetingUUID is the UUID of the meeting associated with the summary.
-	ZoomMeetingUUID string `json:"zoom_meeting_uuid" dynamodbav:"zoom_meeting_uuid"`
-
-	// ZoomMeetingHostID is the ID of the host of the meeting associated with the summary.
-	ZoomMeetingHostID string `json:"zoom_meeting_host_id" dynamodbav:"zoom_meeting_host_id"`
-
-	// ZoomMeetingHostEmail is the email of the host of the meeting associated with the summary.
-	ZoomMeetingHostEmail string `json:"zoom_meeting_host_email" dynamodbav:"zoom_meeting_host_email"`
-
-	// ZoomMeetingTopic is the topic of the meeting associated with the summary.
-	ZoomMeetingTopic string `json:"zoom_meeting_topic" dynamodbav:"zoom_meeting_topic"`
-
-	// ZoomWebhookEvent is the original webhook event that triggered the summary.
-	ZoomWebhookEvent string `json:"zoom_webhook_event" dynamodbav:"zoom_webhook_event"`
-
-	// Password is an ITX UUID-generated password for the summary that is used to access the summary.
-	Password string `json:"password" dynamodbav:"password"`
-
-	// SummaryCreatedTime is the creation time of the summary in RFC3339 format.
-	SummaryCreatedTime string `json:"summary_created_time" dynamodbav:"summary_created_time"`
-
-	// SummaryLastModifiedTime is the last modification time of the summary in RFC3339 format.
-	SummaryLastModifiedTime string `json:"summary_last_modified_time" dynamodbav:"summary_last_modified_time"`
-
-	// SummaryStartTime is the start time of the summary in RFC3339 format.
-	SummaryStartTime string `json:"summary_start_time" dynamodbav:"summary_start_time"`
-
-	// SummaryEndTime is the end time of the summary in RFC3339 format.
-	SummaryEndTime string `json:"summary_end_time" dynamodbav:"summary_end_time"`
-
-	// SummaryTitle is the title of the summary.
-	SummaryTitle string `json:"summary_title" dynamodbav:"summary_title"`
-
-	// SummaryOverview is the overview of the summary.
-	SummaryOverview string `json:"summary_overview" dynamodbav:"summary_overview"`
-
-	// SummaryDetails is the details of the summary.
-	SummaryDetails []ZoomMeetingSummaryDetails `json:"summary_details" dynamodbav:"summary_details"`
-
-	// NextSteps is the next steps of the summary.
-	NextSteps []string `json:"next_steps" dynamodbav:"next_steps"`
-
-	// EditedSummaryOverview is the edited overview of the summary.
-	EditedSummaryOverview string `json:"edited_summary_overview" dynamodbav:"edited_summary_overview"`
-
-	// EditedSummaryDetails is the edited details of the summary.
-	EditedSummaryDetails []ZoomMeetingSummaryDetails `json:"edited_summary_details" dynamodbav:"edited_summary_details"`
-
-	// EditedNextSteps is the edited next steps of the summary.
-	EditedNextSteps []string `json:"edited_next_steps" dynamodbav:"edited_next_steps"`
-
-	// RequiresApproval is whether the summary requires approval.
-	RequiresApproval bool `json:"requires_approval" dynamodbav:"requires_approval"`
-
-	// Approved is whether the summary has been approved.
-	Approved bool `json:"approved" dynamodbav:"approved"`
-
-	// EmailSent is whether an email was sent to users about the summary.
-	// An email is only sent to users who have updated the meeting, and it is only for summaries
-	// that are the longest summary for a given past meeting - because we don't want to spam users
-	// with emails about small summaries that aren't the main summary of the meeting.
-	EmailSent bool `json:"email_sent" dynamodbav:"email_sent"`
-
-	// CreatedAt is the creation time of the summary in RFC3339 format.
-	CreatedAt string `json:"created_at" dynamodbav:"created_at"`
-
-	// CreatedBy is the user who created the summary.
-	CreatedBy CreatedBy `json:"created_by" dynamodbav:"created_by"`
-
-	// ModifiedAt is the last modification time of the summary in RFC3339 format.
-	ModifiedAt string `json:"modified_at" dynamodbav:"modified_at"`
-
-	// ModifiedBy is the user who last modified the summary.
-	ModifiedBy UpdatedBy `json:"modified_by" dynamodbav:"modified_by"`
 }
 
 // PastMeetingSummaryInput represents a zoom meeting AI summary that is generated by Zoom

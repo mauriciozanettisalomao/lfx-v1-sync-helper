@@ -38,8 +38,6 @@ github.com/lestrrat-go/jwx/v2 v2.1.6 h1:hxM1gfDILk/l5ylers6BX/Eq1m/pnxe9NBwW6lVf
 github.com/lestrrat-go/jwx/v2 v2.1.6/go.mod h1:Y722kU5r/8mV7fYDifjug0r8FK8mZdw0K0GpJw/l8pU=
 github.com/lestrrat-go/option v1.0.1 h1:oAzP2fvZGQKWkvHa1/SAcFolBEca1oN+mQ7eooNBEYU=
 github.com/lestrrat-go/option v1.0.1/go.mod h1:5ZHFbivi4xwXxhxY9XHDe2FHo6/Z7WWmtT7T5nBBp3I=
-github.com/linuxfoundation-it/itx-service-zoom v0.0.17 h1:LTGAIm0iNlpsITwezQ+9hYuPHTC6+ZzocHIzzuKGCqo=
-github.com/linuxfoundation-it/itx-service-zoom v0.0.17/go.mod h1:y6EqtcLb+VlJaHS+L3l7enQneYT2tt6WnckkOh5x8rk=
 github.com/linuxfoundation/lfx-v2-committee-service v0.2.14 h1:8w734lyQwad+UYNZrxBCY7HNfvTmaMHzAlrhPrNqIiE=
 github.com/linuxfoundation/lfx-v2-committee-service v0.2.14/go.mod h1:B21xE5Wb7cJlYvWYQotg8pDSS3V30kxDmFa6IeYEmBk=
 github.com/linuxfoundation/lfx-v2-project-service v0.5.3 h1:yy/JTEhwxUA47pPGrWhxFLFNYcefzpvT6+8f49nNQeE=
