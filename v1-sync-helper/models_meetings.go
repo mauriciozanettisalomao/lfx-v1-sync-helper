@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Package main provides data models and structures for meeting-related operations.
 package main
 
 import "time"
@@ -47,7 +48,8 @@ type Committee struct {
 	Filters []string `json:"filters,omitempty"`
 }
 
-type MeetingInput struct {
+// meetingInput represents input data for creating or updating meetings.
+type meetingInput struct {
 	// ID is the meeting ID (can be a UUID or numeric ID)
 	ID string `json:"id"`
 
@@ -167,7 +169,8 @@ type ZoomMeetingMappingDB struct {
 	CommitteeFilters []string `dynamodbav:"committee_filters"`
 }
 
-type RegistrantInput struct {
+// registrantInput represents input data for meeting registrants.
+type registrantInput struct {
 	// ID is the [RegistrantID] attribute renamed
 	ID string `json:"id"` // v2 attribute
 
@@ -277,7 +280,8 @@ type RegistrantInput struct {
 	UpdatedBy UpdatedBy `json:"updated_by" dynamodbav:"updated_by"`
 }
 
-type PastMeetingInput struct {
+// pastMeetingInput represents input data for past meeting records.
+type pastMeetingInput struct {
 	// MeetingAndOccurrenceID is the primary key of the past meeting table
 	// If the past meeting record is for a recurring meeting, then the value is the combination of the
 	// meeting ID and the occurrence ID (e.g. <meeting_id>:<occurrence_id>). Otherwise it is just the

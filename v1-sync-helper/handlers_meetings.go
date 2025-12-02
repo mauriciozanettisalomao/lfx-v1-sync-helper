@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Package main provides HTTP handlers for meeting-related operations.
 package main
 
 import (
@@ -150,7 +151,7 @@ type MeetingAccessMessage struct {
 }
 
 // convertMapToInputMeeting converts a map[string]any to an InputMeeting struct.
-func convertMapToInputMeeting(ctx context.Context, v1Data map[string]any) (*MeetingInput, error) {
+func convertMapToInputMeeting(ctx context.Context, v1Data map[string]any) (*meetingInput, error) {
 	// Convert map to JSON bytes
 	jsonBytes, err := json.Marshal(v1Data)
 	if err != nil {
@@ -159,7 +160,7 @@ func convertMapToInputMeeting(ctx context.Context, v1Data map[string]any) (*Meet
 	}
 
 	// Unmarshal JSON bytes into InputMeeting struct
-	var meeting MeetingInput
+	var meeting meetingInput
 	if err := json.Unmarshal(jsonBytes, &meeting); err != nil {
 		logger.With(errKey, err).ErrorContext(ctx, "failed to unmarshal JSON into InputMeeting")
 		return nil, fmt.Errorf("failed to unmarshal JSON into InputMeeting: %w", err)
@@ -172,7 +173,7 @@ func convertMapToInputMeeting(ctx context.Context, v1Data map[string]any) (*Meet
 	return &meeting, nil
 }
 
-func getMeetingTags(meeting *MeetingInput) []string {
+func getMeetingTags(meeting *meetingInput) []string {
 	tags := []string{
 		fmt.Sprintf("%s", meeting.ID),
 		fmt.Sprintf("meeting_uid:%s", meeting.ID),
@@ -211,7 +212,7 @@ func handleZoomMeetingUpdate(ctx context.Context, key string, v1Data map[string]
 
 	// Try to get committee mappings from the index first
 	var committees []string
-	committeeMappings := make(map[string]MappingCommittee)
+	committeeMappings := make(map[string]mappingCommittee)
 	indexKey := fmt.Sprintf("v1-mappings.meeting-mappings.%s", uid)
 	indexEntry, err := mappingsKV.Get(ctx, indexKey)
 	if err == nil && indexEntry != nil {
@@ -297,7 +298,8 @@ func convertMapToInputMeetingMapping(ctx context.Context, v1Data map[string]any)
 	return &mapping, nil
 }
 
-type MappingCommittee struct {
+// mappingCommittee represents committee mapping data.
+type mappingCommittee struct {
 	CommitteeID      string   `json:"committee_id"`
 	CommitteeFilters []string `json:"committee_filters"`
 }
@@ -356,7 +358,7 @@ func handleZoomMeetingMappingUpdate(ctx context.Context, key string, v1Data map[
 		return
 	}
 
-	committeeMappings := make(map[string]MappingCommittee)
+	committeeMappings := make(map[string]mappingCommittee)
 	indexKey := fmt.Sprintf("v1-mappings.meeting-mappings.%s", meetingID)
 	indexEntry, _ := mappingsKV.Get(ctx, indexKey)
 	if indexEntry != nil {
@@ -420,7 +422,7 @@ func handleZoomMeetingMappingUpdate(ctx context.Context, key string, v1Data map[
 
 	// Only add the committee mapping if it doesn't already exist.
 	if _, ok := committeeMappings[mapping.ID]; !ok {
-		committeeMappings[mapping.ID] = MappingCommittee{
+		committeeMappings[mapping.ID] = mappingCommittee{
 			CommitteeID:      committeeID,
 			CommitteeFilters: mapping.CommitteeFilters,
 		}
@@ -440,7 +442,7 @@ func handleZoomMeetingMappingUpdate(ctx context.Context, key string, v1Data map[
 }
 
 // convertMapToInputRegistrant converts a map[string]any to a RegistrantInput struct.
-func convertMapToInputRegistrant(ctx context.Context, v1Data map[string]any) (*RegistrantInput, error) {
+func convertMapToInputRegistrant(ctx context.Context, v1Data map[string]any) (*registrantInput, error) {
 	// Convert map to JSON bytes
 	jsonBytes, err := json.Marshal(v1Data)
 	if err != nil {
@@ -449,10 +451,10 @@ func convertMapToInputRegistrant(ctx context.Context, v1Data map[string]any) (*R
 	}
 
 	// Unmarshal JSON bytes into RegistrantInput struct
-	var registrant RegistrantInput
+	var registrant registrantInput
 	if err := json.Unmarshal(jsonBytes, &registrant); err != nil {
-		logger.With(errKey, err).ErrorContext(ctx, "failed to unmarshal JSON into RegistrantInput")
-		return nil, fmt.Errorf("failed to unmarshal JSON into RegistrantInput: %w", err)
+		logger.With(errKey, err).ErrorContext(ctx, "failed to unmarshal JSON into registrantInput")
+		return nil, fmt.Errorf("failed to unmarshal JSON into registrantInput: %w", err)
 	}
 
 	if registrantID, ok := v1Data["registrant_id"].(string); ok && registrantID != "" {
@@ -471,7 +473,7 @@ type MeetingRegistrantAccessMessage struct {
 	Host      bool   `json:"host"`
 }
 
-func getRegistrantTags(registrant *RegistrantInput) []string {
+func getRegistrantTags(registrant *registrantInput) []string {
 	tags := []string{
 		fmt.Sprintf("%s", registrant.ID),
 		fmt.Sprintf("registrant_uid:%s", registrant.ID),
@@ -499,7 +501,7 @@ func handleZoomMeetingRegistrantUpdate(ctx context.Context, key string, v1Data m
 	// Convert v1Data map to RegistrantInput struct
 	registrant, err := convertMapToInputRegistrant(ctx, v1Data)
 	if err != nil {
-		logger.With(errKey, err, "key", key).ErrorContext(ctx, "failed to convert v1Data to RegistrantInput")
+		logger.With(errKey, err, "key", key).ErrorContext(ctx, "failed to convert v1Data to registrantInput")
 		return
 	}
 
@@ -564,7 +566,7 @@ type PastMeetingAccessMessage struct {
 }
 
 // convertMapToInputPastMeeting converts a map[string]any to a PastMeetingInput struct.
-func convertMapToInputPastMeeting(ctx context.Context, v1Data map[string]any) (*PastMeetingInput, error) {
+func convertMapToInputPastMeeting(ctx context.Context, v1Data map[string]any) (*pastMeetingInput, error) {
 	// Convert map to JSON bytes
 	jsonBytes, err := json.Marshal(v1Data)
 	if err != nil {
@@ -573,16 +575,16 @@ func convertMapToInputPastMeeting(ctx context.Context, v1Data map[string]any) (*
 	}
 
 	// Unmarshal JSON bytes into PastMeetingInput struct
-	var pastMeeting PastMeetingInput
+	var pastMeeting pastMeetingInput
 	if err := json.Unmarshal(jsonBytes, &pastMeeting); err != nil {
-		logger.With(errKey, err).ErrorContext(ctx, "failed to unmarshal JSON into PastMeetingInput")
-		return nil, fmt.Errorf("failed to unmarshal JSON into PastMeetingInput: %w", err)
+		logger.With(errKey, err).ErrorContext(ctx, "failed to unmarshal JSON into pastMeetingInput")
+		return nil, fmt.Errorf("failed to unmarshal JSON into pastMeetingInput: %w", err)
 	}
 
 	return &pastMeeting, nil
 }
 
-func getPastMeetingTags(pastMeeting *PastMeetingInput) []string {
+func getPastMeetingTags(pastMeeting *pastMeetingInput) []string {
 	tags := []string{
 		fmt.Sprintf("%s", pastMeeting.MeetingAndOccurrenceID),
 		fmt.Sprintf("past_meeting_uid:%s", pastMeeting.MeetingAndOccurrenceID),
@@ -609,7 +611,7 @@ func handleZoomPastMeetingUpdate(ctx context.Context, key string, v1Data map[str
 	// Convert v1Data map to PastMeetingInput struct
 	pastMeeting, err := convertMapToInputPastMeeting(ctx, v1Data)
 	if err != nil {
-		logger.With(errKey, err, "key", key).ErrorContext(ctx, "failed to convert v1Data to PastMeetingInput")
+		logger.With(errKey, err, "key", key).ErrorContext(ctx, "failed to convert v1Data to pastMeetingInput")
 		return
 	}
 
@@ -634,7 +636,7 @@ func handleZoomPastMeetingUpdate(ctx context.Context, key string, v1Data map[str
 
 	// Try to get committee mappings from the index first
 	var committees []string
-	committeeMappings := make(map[string]MappingCommittee)
+	committeeMappings := make(map[string]mappingCommittee)
 	indexKey := fmt.Sprintf("v1-mappings.past-meeting-mappings.%s", uid)
 	indexEntry, err := mappingsKV.Get(ctx, indexKey)
 	if err == nil && indexEntry != nil {
@@ -762,7 +764,7 @@ func handleZoomPastMeetingMappingUpdate(ctx context.Context, key string, v1Data 
 		return
 	}
 
-	committeeMappings := make(map[string]MappingCommittee)
+	committeeMappings := make(map[string]mappingCommittee)
 	indexKey := fmt.Sprintf("v1-mappings.past-meeting-mappings.%s", meetingAndOccurrenceID)
 	indexEntry, _ := mappingsKV.Get(ctx, indexKey)
 	if indexEntry != nil {
@@ -821,7 +823,7 @@ func handleZoomPastMeetingMappingUpdate(ctx context.Context, key string, v1Data 
 
 	// Only add the committee mapping if it doesn't already exist.
 	if _, ok := committeeMappings[mapping.ID]; !ok {
-		committeeMappings[mapping.ID] = MappingCommittee{
+		committeeMappings[mapping.ID] = mappingCommittee{
 			CommitteeID:      committeeID,
 			CommitteeFilters: mapping.CommitteeFilters,
 		}
