@@ -125,10 +125,16 @@ func mapAdminCategoryToCategory(adminCategory string) *string {
 }
 
 // handleProjectUpdate processes a project update from the KV bucket.
-func handleProjectUpdate(ctx context.Context, key string, v1Data map[string]any, userInfo UserInfo, mappingsKV jetstream.KeyValue) {
+func handleProjectUpdate(ctx context.Context, key string, v1Data map[string]any, mappingsKV jetstream.KeyValue) {
 	// Check if we should skip this sync operation.
 	if shouldSkipSync(ctx, v1Data) {
 		return
+	}
+
+	// Extract v1Principal from lastmodifiedbyid for JWT generation.
+	v1Principal := ""
+	if lastModifiedBy, ok := v1Data["lastmodifiedbyid"].(string); ok && lastModifiedBy != "" {
+		v1Principal = lastModifiedBy
 	}
 
 	// Extract project SFID (primary key).
@@ -172,7 +178,7 @@ func handleProjectUpdate(ctx context.Context, key string, v1Data map[string]any,
 			return
 		}
 
-		err = updateProject(ctx, payload, settingsPayload, userInfo)
+		err = updateProject(ctx, payload, settingsPayload, v1Principal, mappingsKV)
 		uid = existingUID
 	} else {
 		// Check allowlist before creating new project.
@@ -194,7 +200,7 @@ func handleProjectUpdate(ctx context.Context, key string, v1Data map[string]any,
 		}
 
 		var response *projectservice.ProjectFull
-		response, err = createProject(ctx, payload, userInfo)
+		response, err = createProject(ctx, payload, v1Principal, mappingsKV)
 		if response != nil && response.UID != nil {
 			uid = *response.UID
 		}

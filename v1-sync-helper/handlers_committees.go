@@ -133,10 +133,16 @@ func mapTypeToCategory(ctx context.Context, typeVal, committeeName string) *stri
 }
 
 // handleCommitteeUpdate processes a committee update from the KV bucket.
-func handleCommitteeUpdate(ctx context.Context, key string, v1Data map[string]any, userInfo UserInfo, mappingsKV jetstream.KeyValue) {
+func handleCommitteeUpdate(ctx context.Context, key string, v1Data map[string]any, mappingsKV jetstream.KeyValue) {
 	// Check if we should skip this sync operation.
 	if shouldSkipSync(ctx, v1Data) {
 		return
+	}
+
+	// Extract v1Principal from lastmodifiedbyid for JWT generation.
+	v1Principal := ""
+	if lastModifiedBy, ok := v1Data["lastmodifiedbyid"].(string); ok && lastModifiedBy != "" {
+		v1Principal = lastModifiedBy
 	}
 
 	// Extract committee SFID.
@@ -169,7 +175,7 @@ func handleCommitteeUpdate(ctx context.Context, key string, v1Data map[string]an
 			return
 		}
 
-		err = updateCommittee(ctx, payload, userInfo)
+		err = updateCommittee(ctx, payload, v1Principal, mappingsKV)
 		uid = existingUID
 	} else {
 		// Check if parent project exists in mappings before creating new committee.
@@ -193,7 +199,7 @@ func handleCommitteeUpdate(ctx context.Context, key string, v1Data map[string]an
 		}
 
 		var response *committeeservice.CommitteeFullWithReadonlyAttributes
-		response, err = createCommittee(ctx, payload, userInfo)
+		response, err = createCommittee(ctx, payload, v1Principal, mappingsKV)
 		if response != nil && response.UID != nil {
 			uid = *response.UID
 		}
@@ -353,10 +359,16 @@ func mapV1DataToCommitteeUpdateBasePayload(ctx context.Context, committeeUID str
 }
 
 // handleCommitteeMemberUpdate processes a committee member update from platform-community__c records.
-func handleCommitteeMemberUpdate(ctx context.Context, key string, v1Data map[string]any, userInfo UserInfo, mappingsKV jetstream.KeyValue) {
+func handleCommitteeMemberUpdate(ctx context.Context, key string, v1Data map[string]any, mappingsKV jetstream.KeyValue) {
 	// Check if we should skip this sync operation.
 	if shouldSkipSync(ctx, v1Data) {
 		return
+	}
+
+	// Extract v1Principal from lastmodifiedbyid for JWT generation.
+	v1Principal := ""
+	if lastModifiedBy, ok := v1Data["lastmodifiedbyid"].(string); ok && lastModifiedBy != "" {
+		v1Principal = lastModifiedBy
 	}
 
 	// Extract committee member SFID.
@@ -419,7 +431,7 @@ func handleCommitteeMemberUpdate(ctx context.Context, key string, v1Data map[str
 			return
 		}
 
-		err = updateCommitteeMember(ctx, payload, userInfo)
+		err = updateCommitteeMember(ctx, payload, v1Principal, mappingsKV)
 		memberUID = existingMemberUID
 	} else {
 		// Create new committee member.
@@ -434,7 +446,7 @@ func handleCommitteeMemberUpdate(ctx context.Context, key string, v1Data map[str
 		}
 
 		var response *committeeservice.CommitteeMemberFullWithReadonlyAttributes
-		response, err = createCommitteeMember(ctx, payload, userInfo)
+		response, err = createCommitteeMember(ctx, payload, v1Principal, mappingsKV)
 		if response != nil && response.UID != nil {
 			memberUID = *response.UID
 		}

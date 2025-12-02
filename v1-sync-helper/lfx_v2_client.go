@@ -5,6 +5,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/patrickmn/go-cache"
 	goahttp "goa.design/goa/v3/http"
 
@@ -257,10 +259,10 @@ func getKeyID(cfg *Config) (string, error) {
 	return jwks.Keys[0].Kid, nil
 }
 
-// generateCachedJWTToken generates or retrieves a cached JWT token for the specified audience and user.
-func generateCachedJWTToken(audience string, userInfo UserInfo) (string, error) {
-	// Create cache key based on audience and user principal.
-	cacheKey := fmt.Sprintf("jwt-%s-%s", audience, userInfo.Principal)
+// generateCachedJWTToken generates or retrieves a cached JWT token for the specified audience and v1 principal.
+func generateCachedJWTToken(audience string, v1Principal string, mappingsKV jetstream.KeyValue) (string, error) {
+	// Create cache key based on audience and v1 principal.
+	cacheKey := fmt.Sprintf("jwt-%s-%s", audience, v1Principal)
 
 	// Check if we have a cached token.
 	if token, found := jwtTokenCache.Get(cacheKey); found {
@@ -268,6 +270,9 @@ func generateCachedJWTToken(audience string, userInfo UserInfo) (string, error) 
 			return tokenStr, nil
 		}
 	}
+
+	// Get user info for JWT generation.
+	userInfo := getUserInfoFromV1(context.Background(), v1Principal, mappingsKV)
 
 	// Generate new token.
 	token, err := generateJWTToken(audience, userInfo)
@@ -318,9 +323,9 @@ func generateJWTToken(audience string, userInfo UserInfo) (string, error) {
 		"sub":       subject,
 		"aud":       audience,
 		"iat":       now.Unix(),
-		"exp":       now.Add(5 * time.Minute).Unix(), // Token expires in 5 minutes.
-		"nbf":       now.Unix(),                      // Not before (valid from now).
-		"jti":       uuid.New().String(),             // Unique JWT ID.
+		"exp":       now.Add(5 * time.Minute).Unix(),   // Token expires in 5 minutes.
+		"nbf":       now.Add(-30 * time.Second).Unix(), // Not before (valid from now).
+		"jti":       uuid.New().String(),               // Unique JWT ID.
 		"principal": principal,
 	}
 

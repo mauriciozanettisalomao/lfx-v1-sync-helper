@@ -643,28 +643,40 @@ func parseWebsiteURL(website string) string {
 }
 
 // getUserInfoFromV1 converts a Platform ID to LFX username and email using v1 API with caching
-func getUserInfoFromV1(ctx context.Context, platformID string, mappingsKV jetstream.KeyValue) (UserInfo, error) {
+func getUserInfoFromV1(ctx context.Context, platformID string, mappingsKV jetstream.KeyValue) UserInfo {
 	if platformID == "" {
-		return UserInfo{}, nil
+		return UserInfo{}
+	}
+
+	if platformID == "platform" {
+		return UserInfo{}
+	}
+
+	// Check if this is a machine user with @clients suffix.
+	if strings.HasSuffix(platformID, "@clients") {
+		// Machine user - pass through with @clients only on principal.
+		return UserInfo{
+			Username:  strings.TrimSuffix(platformID, "@clients"), // Subject without @clients.
+			Email:     "",                                         // No email for machine users.
+			Principal: platformID,                                 // Principal includes @clients.
+		}
 	}
 
 	user, err := lookupUser(ctx, platformID, mappingsKV)
 	if err != nil {
 		logger.With(errKey, err, "platform_id", platformID).WarnContext(ctx, "failed to lookup user from v1 API, falling back to service account")
-		return UserInfo{}, nil // Return empty to trigger fallback
+		return UserInfo{} // Return empty to trigger fallback
 	}
 
 	// Check for cached error/invalid states
 	if user.Username == "" {
 		logger.With("platform_id", platformID).WarnContext(ctx, "user has empty username, falling back to service account")
-		return UserInfo{}, nil // Return empty to trigger fallback
+		return UserInfo{} // Return empty to trigger fallback
 	}
 
 	// Return user info for JWT impersonation
-	userInfo := UserInfo{
+	return UserInfo{
 		Username: user.Username,
 		Email:    user.Email,
 	}
-
-	return userInfo, nil
 }
