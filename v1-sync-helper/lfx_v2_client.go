@@ -272,7 +272,7 @@ func generateCachedJWTToken(audience string, v1Principal string, mappingsKV jets
 	}
 
 	// Get user info for JWT generation.
-	userInfo := getUserInfoFromV1(context.Background(), v1Principal, mappingsKV)
+	userInfo := getUserInfoFromV1Principal(context.Background(), v1Principal, mappingsKV)
 
 	// Generate new token.
 	token, err := generateJWTToken(audience, userInfo)

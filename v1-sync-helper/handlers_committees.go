@@ -484,7 +484,7 @@ func mapV1DataToCommitteeMemberCreatePayload(ctx context.Context, committeeUID s
 	// Map contact information.
 	if contactNameV1, ok := v1Data["contact_name__c"].(string); ok && contactNameV1 != "" {
 		// Look up user information from v1 API using the SFID.
-		user, err := getUserFromV1API(ctx, contactNameV1)
+		user, err := lookupV1User(ctx, contactNameV1, mappingsKV)
 		if err != nil {
 			logger.With(errKey, err, "contact_name_sfid", contactNameV1).WarnContext(ctx, "failed to lookup user from v1 API, leaving user fields unset")
 		} else {
@@ -590,7 +590,7 @@ func mapV1DataToCommitteeMemberCreatePayload(ctx context.Context, committeeUID s
 	// Map organization information.
 	if accountSFID, ok := v1Data["account__c"].(string); ok && accountSFID != "" {
 		// Look up organization information from v1 Organization Service.
-		org, err := lookupOrg(ctx, accountSFID, mappingsKV)
+		org, err := lookupV1Org(ctx, accountSFID, mappingsKV)
 		if err != nil {
 			logger.With(errKey, err, "account_sfid", accountSFID).WarnContext(ctx, "failed to lookup organization, leaving empty")
 			// Organization lookup failed, leave Organization field nil.
@@ -649,7 +649,7 @@ func mapV1DataToCommitteeMemberUpdatePayload(ctx context.Context, committeeUID, 
 	// Map contact information.
 	if contactNameV1, ok := v1Data["contact_name__c"].(string); ok && contactNameV1 != "" {
 		// Look up user information from v1 API using the SFID.
-		user, err := getUserFromV1API(ctx, contactNameV1)
+		user, err := lookupV1User(ctx, contactNameV1, mappingsKV)
 		if err != nil {
 			logger.With(errKey, err, "contact_name_sfid", contactNameV1).WarnContext(ctx, "failed to lookup user from v1 API, leaving user fields unset")
 		} else {
@@ -764,7 +764,7 @@ func mapV1DataToCommitteeMemberUpdatePayload(ctx context.Context, committeeUID, 
 	// Map organization information.
 	if accountSFID, ok := v1Data["account__c"].(string); ok && accountSFID != "" {
 		// Look up organization information from v1 Organization Service.
-		org, err := lookupOrg(ctx, accountSFID, mappingsKV)
+		org, err := lookupV1Org(ctx, accountSFID, mappingsKV)
 		if err != nil {
 			logger.With(errKey, err, "account_sfid", accountSFID).WarnContext(ctx, "failed to lookup organization, leaving empty")
 			// Organization lookup failed, leave Organization field nil.
