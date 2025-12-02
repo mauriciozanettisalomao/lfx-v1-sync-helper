@@ -27,32 +27,6 @@ func shouldSkipSync(ctx context.Context, v1Data map[string]any) bool {
 	return false
 }
 
-// extractUserInfo extracts user information from v1 data for API calls and JWT impersonation.
-func extractUserInfo(ctx context.Context, v1Data map[string]any, mappingsKV jetstream.KeyValue) UserInfo {
-	// Extract platform ID from lastmodifiedbyid
-	if lastModifiedBy, ok := v1Data["lastmodifiedbyid"].(string); ok && lastModifiedBy != "" {
-		// Check if this is a machine user with @clients suffix
-		if strings.HasSuffix(lastModifiedBy, "@clients") {
-			// Machine user - pass through with @clients only on principal
-			return UserInfo{
-				Username:  strings.TrimSuffix(lastModifiedBy, "@clients"), // Subject without @clients
-				Email:     "",                                             // No email for machine users
-				Principal: lastModifiedBy,                                 // Principal includes @clients
-			}
-		}
-
-		// Regular platform ID - look up via v1 API
-		userInfo, err := getUserInfoFromV1(ctx, lastModifiedBy, mappingsKV)
-		if err != nil || userInfo.Username == "" {
-			logger.With(errKey, err, "platform_id", lastModifiedBy).WarnContext(ctx, "failed to get user info from v1 API, falling back to service account")
-			return UserInfo{} // Empty UserInfo triggers fallback to v1_sync_helper@clients
-		}
-
-		return userInfo
-	}
-	return UserInfo{}
-}
-
 // kvHandler processes KV bucket updates from Meltano
 func kvHandler(entry jetstream.KeyValueEntry, v1KV jetstream.KeyValue, mappingsKV jetstream.KeyValue) {
 	ctx := context.Background()
@@ -89,16 +63,13 @@ func handleKVPut(ctx context.Context, entry jetstream.KeyValueEntry, _ jetstream
 		return
 	}
 
-	// Extract user information for API calls and JWT impersonation
-	userInfo := extractUserInfo(ctx, v1Data, mappingsKV)
-
 	// Determine the object type based on the key pattern
 	if strings.HasPrefix(key, "salesforce-project__c.") {
-		handleProjectUpdate(ctx, key, v1Data, userInfo, mappingsKV)
+		handleProjectUpdate(ctx, key, v1Data, mappingsKV)
 	} else if strings.HasPrefix(key, "platform-collaboration__c.") {
-		handleCommitteeUpdate(ctx, key, v1Data, userInfo, mappingsKV)
+		handleCommitteeUpdate(ctx, key, v1Data, mappingsKV)
 	} else if strings.HasPrefix(key, "platform-community__c.") {
-		handleCommitteeMemberUpdate(ctx, key, v1Data, userInfo, mappingsKV)
+		handleCommitteeMemberUpdate(ctx, key, v1Data, mappingsKV)
 	} else {
 		logger.With("key", key).DebugContext(ctx, "unknown object type, ignoring")
 	}

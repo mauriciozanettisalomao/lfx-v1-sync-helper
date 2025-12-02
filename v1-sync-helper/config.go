@@ -23,7 +23,7 @@ var projectAllowlist = []string{
 	// "lfenergy",
 }
 
-// ProjectFamilyAllowlist contains the list of projects slugs that are allowed
+// projectFamilyAllowlist contains the list of project slugs that are allowed
 // to be synced along with their child projects. *All entries must be
 // lowercase* (lookups downcase for case-insensitive matching).
 var projectFamilyAllowlist = []string{

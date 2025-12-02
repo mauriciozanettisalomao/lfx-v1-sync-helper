@@ -19,9 +19,6 @@ app:
     # NATS_URL is required
     NATS_URL:
       value: nats://lfx-platform-nats.lfx.svc.cluster.local:4222
-    # DEBUG is optional
-    DEBUG:
-      value: "false"
     # PORT is optional
     PORT:
       value: "8080"
