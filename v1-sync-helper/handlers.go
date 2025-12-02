@@ -63,32 +63,39 @@ func handleKVPut(ctx context.Context, entry jetstream.KeyValueEntry, v1KV jetstr
 		return
 	}
 
-	// Determine the object type based on the key pattern
-	if strings.HasPrefix(key, "salesforce-project__c.") {
+	// Extract the prefix (everything before the first period) for faster lookup.
+	prefix := key
+	if dotIndex := strings.Index(key, "."); dotIndex != -1 {
+		prefix = key[:dotIndex]
+	}
+
+	// Determine the object type based on the key prefix.
+	switch prefix {
+	case "salesforce-project__c":
 		handleProjectUpdate(ctx, key, v1Data, mappingsKV)
-	} else if strings.HasPrefix(key, "platform-collaboration__c.") {
+	case "platform-collaboration__c":
 		handleCommitteeUpdate(ctx, key, v1Data, mappingsKV)
-	} else if strings.HasPrefix(key, "platform-community__c.") {
+	case "platform-community__c":
 		handleCommitteeMemberUpdate(ctx, key, v1Data, mappingsKV)
-	} else if strings.HasPrefix(key, "itx-zoom-meetings-v2.") { // gitleaks:allow
+	case "itx-zoom-meetings-v2":
 		handleZoomMeetingUpdate(ctx, key, v1Data, mappingsKV)
-	} else if strings.HasPrefix(key, "itx-zoom-meetings-registrants-v2.") {
+	case "itx-zoom-meetings-registrants-v2":
 		handleZoomMeetingRegistrantUpdate(ctx, key, v1Data, mappingsKV)
-	} else if strings.HasPrefix(key, "itx-zoom-meetings-mappings-v2.") {
+	case "itx-zoom-meetings-mappings-v2":
 		handleZoomMeetingMappingUpdate(ctx, key, v1Data, v1KV, mappingsKV)
-	} else if strings.HasPrefix(key, "itx-zoom-past-meetings-attendees.") {
+	case "itx-zoom-past-meetings-attendees":
 		handleZoomPastMeetingAttendeeUpdate(ctx, key, v1Data, v1KV, mappingsKV)
-	} else if strings.HasPrefix(key, "itx-zoom-past-meetings-invitees.") {
+	case "itx-zoom-past-meetings-invitees":
 		handleZoomPastMeetingInviteeUpdate(ctx, key, v1Data, v1KV, mappingsKV)
-	} else if strings.HasPrefix(key, "itx-zoom-past-meetings-mappings.") {
+	case "itx-zoom-past-meetings-mappings":
 		handleZoomPastMeetingMappingUpdate(ctx, key, v1Data, v1KV, mappingsKV)
-	} else if strings.HasPrefix(key, "itx-zoom-past-meetings-recordings.") {
+	case "itx-zoom-past-meetings-recordings":
 		handleZoomPastMeetingRecordingUpdate(ctx, key, v1Data, mappingsKV)
-	} else if strings.HasPrefix(key, "itx-zoom-past-meetings-summaries.") {
+	case "itx-zoom-past-meetings-summaries":
 		handleZoomPastMeetingSummaryUpdate(ctx, key, v1Data, v1KV, mappingsKV)
-	} else if strings.HasPrefix(key, "itx-zoom-past-meetings.") {
+	case "itx-zoom-past-meetings":
 		handleZoomPastMeetingUpdate(ctx, key, v1Data, mappingsKV)
-	} else {
+	default:
 		logger.With("key", key).DebugContext(ctx, "unknown object type, ignoring")
 	}
 }
