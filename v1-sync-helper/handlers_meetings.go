@@ -173,12 +173,12 @@ func convertMapToInputMeeting(ctx context.Context, v1Data map[string]any) (*meet
 	// then use that to get the v2 project UID.
 	if projectSFID, ok := v1Data["proj_id"].(string); ok && projectSFID != "" {
 		meeting.ProjectSFID = projectSFID
-	}
 
-	// Take the v1 project salesforce ID and look up the v2 project UID.
-	projectMappingKey := fmt.Sprintf("project.sfid.%s", meeting.ProjectSFID)
-	if entry, err := mappingsKV.Get(ctx, projectMappingKey); err == nil {
-		meeting.ProjectID = string(entry.Value())
+		// Take the v1 project salesforce ID and look up the v2 project UID.
+		projectMappingKey := fmt.Sprintf("project.sfid.%s", meeting.ProjectSFID)
+		if entry, err := mappingsKV.Get(ctx, projectMappingKey); err == nil {
+			meeting.ProjectID = string(entry.Value())
+		}
 	}
 
 	occurrences, err := CalculateOccurrences(ctx, meeting, false, false, 100)
@@ -228,13 +228,11 @@ func handleZoomMeetingUpdate(ctx context.Context, key string, v1Data map[string]
 		return
 	}
 
-	// Check if parent project exists in mappings before proceeding.
-	if meeting.ProjectID == "" || meeting.ProjectSFID == "" {
-		logger.With("meeting_id", uid).ErrorContext(ctx, "meeting missing required parent project information")
-		return
-	}
-	projectMappingKey := fmt.Sprintf("project.sfid.%s", meeting.ProjectSFID)
-	if _, err := mappingsKV.Get(ctx, projectMappingKey); err != nil {
+	// Check if parent project exists in mappings before proceeding. Because
+	// convertMapToInputMeeting has already looked up the SFID project ID
+	// mapping, we don't need to do it again: we can just check if ProjectID (v2
+	// UID) is set.
+	if meeting.ProjectID == "" {
 		logger.With("project_sfid", meeting.ProjectSFID, "meeting_id", uid).InfoContext(ctx, "skipping meeting sync - parent project not found in mappings")
 		return
 	}
