@@ -539,6 +539,18 @@ func handleZoomMeetingRegistrantUpdate(ctx context.Context, key string, v1Data m
 		return
 	}
 
+	// If username is blank but we have a v1 Platform ID (user_id), lookup the username.
+	if registrant.Username == "" && registrant.UserID != "" {
+		if v1User, lookupErr := lookupV1User(ctx, registrant.UserID); lookupErr == nil && v1User != nil && v1User.Username != "" {
+			registrant.Username = v1User.Username
+			logger.With("user_id", registrant.UserID, "username", v1User.Username).DebugContext(ctx, "looked up username for registrant")
+		} else {
+			if lookupErr != nil {
+				logger.With(errKey, lookupErr, "user_id", registrant.UserID).WarnContext(ctx, "failed to lookup v1 user for registrant")
+			}
+		}
+	}
+
 	// Check if parent meeting exists in mappings before proceeding.
 	if registrant.MeetingID == "" {
 		logger.With("registrant_id", registrantID).ErrorContext(ctx, "meeting registrant missing required parent meeting ID")
@@ -1021,6 +1033,19 @@ func handleZoomPastMeetingInviteeUpdate(ctx context.Context, key string, v1Data 
 		return
 	}
 
+	// If username is blank but we have a v1 Platform ID (lf_user_id), lookup the username.
+	if v2Participant.Username == "" && invitee.LFUserID != "" {
+		if v1User, lookupErr := lookupV1User(ctx, invitee.LFUserID); lookupErr == nil && v1User != nil && v1User.Username != "" {
+			v2Participant.Username = mapUsernameToAuthSub(v1User.Username)
+			invitee.LFSSO = v1User.Username // Update the invitee data for access message
+			logger.With("lf_user_id", invitee.LFUserID, "username", v1User.Username).DebugContext(ctx, "looked up username for past meeting invitee")
+		} else {
+			if lookupErr != nil {
+				logger.With(errKey, lookupErr, "lf_user_id", invitee.LFUserID).WarnContext(ctx, "failed to lookup v1 user for past meeting invitee")
+			}
+		}
+	}
+
 	mappingKey := fmt.Sprintf("v1_past_meeting_invitees.%s", inviteeID)
 	indexerAction := MessageActionCreated
 	if _, err := mappingsKV.Get(ctx, mappingKey); err == nil {
@@ -1196,6 +1221,19 @@ func handleZoomPastMeetingAttendeeUpdate(ctx context.Context, key string, v1Data
 	if err != nil {
 		logger.With(errKey, err, "key", key).ErrorContext(ctx, "failed to convert attendee to V2 participant")
 		return
+	}
+
+	// If username is blank but we have a v1 Platform ID (lf_user_id), lookup the username.
+	if v2Participant.Username == "" && attendee.LFUserID != "" {
+		if v1User, lookupErr := lookupV1User(ctx, attendee.LFUserID); lookupErr == nil && v1User != nil && v1User.Username != "" {
+			v2Participant.Username = mapUsernameToAuthSub(v1User.Username)
+			attendee.LFSSO = v1User.Username // Update the attendee data for access message
+			logger.With("lf_user_id", attendee.LFUserID, "username", v1User.Username).DebugContext(ctx, "looked up username for past meeting attendee")
+		} else {
+			if lookupErr != nil {
+				logger.With(errKey, lookupErr, "lf_user_id", attendee.LFUserID).WarnContext(ctx, "failed to lookup v1 user for past meeting attendee")
+			}
+		}
 	}
 
 	tags := getPastMeetingParticipantTags(v2Participant)
