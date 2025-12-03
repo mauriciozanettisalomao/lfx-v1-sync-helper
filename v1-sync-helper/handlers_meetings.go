@@ -181,7 +181,7 @@ func convertMapToInputMeeting(ctx context.Context, v1Data map[string]any) (*meet
 		}
 	}
 
-	occurrences, err := CalculateOccurrences(ctx, meeting, false, false, 100)
+	occurrences, err := calculateOccurrences(ctx, meeting, false, false, 100)
 	if err != nil {
 		logger.With(errKey, err, "meeting_id", meeting.ID).ErrorContext(ctx, "failed to calculate occurrences")
 		return nil, fmt.Errorf("failed to calculate occurrences: %w", err)
