@@ -456,14 +456,22 @@ type registrantInput struct {
 
 // pastMeetingInput represents input data for past meeting records.
 type pastMeetingInput struct {
+	// ID is the partition key of the past meeting table
+	// This is a v2 attribute
+	ID string `json:"id" dynamodbav:"id"`
+
 	// MeetingAndOccurrenceID is the primary key of the past meeting table
 	// If the past meeting record is for a recurring meeting, then the value is the combination of the
 	// meeting ID and the occurrence ID (e.g. <meeting_id>:<occurrence_id>). Otherwise it is just the
 	// meeitng ID for a non-recurring meeting.
 	MeetingAndOccurrenceID string `json:"meeting_and_occurrence_id" dynamodbav:"meeting_and_occurrence_id"`
 
-	// ProjectID is the ID of the project associated with the past meeting
-	ProjectID string `json:"proj_id" dynamodbav:"proj_id"`
+	// ProjectID is the ID of the salesforce (v1) project associated with the past meeting
+	ProjectSFID string `json:"proj_id" dynamodbav:"proj_id"`
+
+	// ProjectID is the ID of the v2 project associated with the past meeting
+	// This is a v2 attribute
+	ProjectID string `json:"project_id" dynamodbav:"project_id"`
 
 	// ProjectSlug is the slug of the project associated with the past meeting
 	ProjectSlug string `json:"project_slug" dynamodbav:"project_slug"`

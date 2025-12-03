@@ -586,7 +586,7 @@ type PastMeetingAccessMessage struct {
 }
 
 // convertMapToInputPastMeeting converts a map[string]any to a PastMeetingInput struct.
-func convertMapToInputPastMeeting(ctx context.Context, v1Data map[string]any) (*pastMeetingInput, error) {
+func convertMapToInputPastMeeting(ctx context.Context, v1Data map[string]any, mappingsKV jetstream.KeyValue) (*pastMeetingInput, error) {
 	// Convert map to JSON bytes
 	jsonBytes, err := json.Marshal(v1Data)
 	if err != nil {
@@ -599,6 +599,23 @@ func convertMapToInputPastMeeting(ctx context.Context, v1Data map[string]any) (*
 	if err := json.Unmarshal(jsonBytes, &pastMeeting); err != nil {
 		logger.With(errKey, err).ErrorContext(ctx, "failed to unmarshal JSON into pastMeetingInput")
 		return nil, fmt.Errorf("failed to unmarshal JSON into pastMeetingInput: %w", err)
+	}
+
+	// We need to populate the ID for the v2 system
+	if meetingAndOccurrenceID, ok := v1Data["meeting_and_occurrence_id"].(string); ok && meetingAndOccurrenceID != "" {
+		pastMeeting.ID = meetingAndOccurrenceID
+	}
+
+	// Convert the v1 project ID since the json key is different,
+	// then use that to get the v2 project UID.
+	if projectSFID, ok := v1Data["proj_id"].(string); ok && projectSFID != "" {
+		pastMeeting.ProjectSFID = projectSFID
+	}
+
+	// Take the v1 project salesforce ID and look up the v2 project UID.
+	projectMappingKey := fmt.Sprintf("project.sfid.%s", pastMeeting.ProjectSFID)
+	if entry, err := mappingsKV.Get(ctx, projectMappingKey); err == nil {
+		pastMeeting.ProjectID = string(entry.Value())
 	}
 
 	return &pastMeeting, nil
@@ -629,7 +646,7 @@ func handleZoomPastMeetingUpdate(ctx context.Context, key string, v1Data map[str
 	logger.With("key", key).DebugContext(ctx, "processing zoom past meeting update")
 
 	// Convert v1Data map to PastMeetingInput struct
-	pastMeeting, err := convertMapToInputPastMeeting(ctx, v1Data)
+	pastMeeting, err := convertMapToInputPastMeeting(ctx, v1Data, mappingsKV)
 	if err != nil {
 		logger.With(errKey, err, "key", key).ErrorContext(ctx, "failed to convert v1Data to pastMeetingInput")
 		return
@@ -649,7 +666,7 @@ func handleZoomPastMeetingUpdate(ctx context.Context, key string, v1Data map[str
 	}
 
 	tags := getPastMeetingTags(pastMeeting)
-	if err := sendIndexerMessage(ctx, IndexV1PastMeetingSubject, indexerAction, v1Data, tags); err != nil {
+	if err := sendIndexerMessage(ctx, IndexV1PastMeetingSubject, indexerAction, pastMeeting, tags); err != nil {
 		logger.With(errKey, err, "uid", uid, "key", key).ErrorContext(ctx, "failed to send past meeting indexer message")
 		return
 	}
@@ -778,7 +795,7 @@ func handleZoomPastMeetingMappingUpdate(ctx context.Context, key string, v1Data 
 	}
 
 	// Convert past meeting data to typed struct
-	pastMeeting, err := convertMapToInputPastMeeting(ctx, pastMeetingData)
+	pastMeeting, err := convertMapToInputPastMeeting(ctx, pastMeetingData, mappingsKV)
 	if err != nil {
 		logger.With(errKey, err, "meeting_and_occurrence_id", meetingAndOccurrenceID).ErrorContext(ctx, "failed to convert past meeting data")
 		return
