@@ -28,7 +28,7 @@ func shouldSkipSync(ctx context.Context, v1Data map[string]any) bool {
 }
 
 // kvHandler processes KV bucket updates from Meltano
-func kvHandler(entry jetstream.KeyValueEntry, v1KV jetstream.KeyValue, mappingsKV jetstream.KeyValue) {
+func kvHandler(entry jetstream.KeyValueEntry) {
 	ctx := context.Background()
 
 	key := entry.Key()
@@ -39,16 +39,16 @@ func kvHandler(entry jetstream.KeyValueEntry, v1KV jetstream.KeyValue, mappingsK
 	// Handle different operations
 	switch operation {
 	case jetstream.KeyValuePut:
-		handleKVPut(ctx, entry, v1KV, mappingsKV)
+		handleKVPut(ctx, entry)
 	case jetstream.KeyValueDelete, jetstream.KeyValuePurge:
-		handleKVDelete(ctx, entry, v1KV, mappingsKV)
+		handleKVDelete(ctx, entry)
 	default:
 		logger.With("key", key, "operation", operation.String()).DebugContext(ctx, "ignoring KV operation")
 	}
 }
 
 // handleKVPut processes a KV put operation (create/update)
-func handleKVPut(ctx context.Context, entry jetstream.KeyValueEntry, _ jetstream.KeyValue, mappingsKV jetstream.KeyValue) {
+func handleKVPut(ctx context.Context, entry jetstream.KeyValueEntry) {
 	key := entry.Key()
 
 	// Parse the JSON data
@@ -63,20 +63,45 @@ func handleKVPut(ctx context.Context, entry jetstream.KeyValueEntry, _ jetstream
 		return
 	}
 
-	// Determine the object type based on the key pattern
-	if strings.HasPrefix(key, "salesforce-project__c.") {
-		handleProjectUpdate(ctx, key, v1Data, mappingsKV)
-	} else if strings.HasPrefix(key, "platform-collaboration__c.") {
-		handleCommitteeUpdate(ctx, key, v1Data, mappingsKV)
-	} else if strings.HasPrefix(key, "platform-community__c.") {
-		handleCommitteeMemberUpdate(ctx, key, v1Data, mappingsKV)
-	} else {
+	// Extract the prefix (everything before the first period) for faster lookup.
+	prefix := key
+	if dotIndex := strings.Index(key, "."); dotIndex != -1 {
+		prefix = key[:dotIndex]
+	}
+
+	// Determine the object type based on the key prefix.
+	switch prefix {
+	case "salesforce-project__c":
+		handleProjectUpdate(ctx, key, v1Data)
+	case "platform-collaboration__c":
+		handleCommitteeUpdate(ctx, key, v1Data)
+	case "platform-community__c":
+		handleCommitteeMemberUpdate(ctx, key, v1Data)
+	case "itx-zoom-meetings-v2":
+		handleZoomMeetingUpdate(ctx, key, v1Data)
+	case "itx-zoom-meetings-registrants-v2":
+		handleZoomMeetingRegistrantUpdate(ctx, key, v1Data)
+	case "itx-zoom-meetings-mappings-v2":
+		handleZoomMeetingMappingUpdate(ctx, key, v1Data)
+	case "itx-zoom-past-meetings-attendees":
+		handleZoomPastMeetingAttendeeUpdate(ctx, key, v1Data)
+	case "itx-zoom-past-meetings-invitees":
+		handleZoomPastMeetingInviteeUpdate(ctx, key, v1Data)
+	case "itx-zoom-past-meetings-mappings":
+		handleZoomPastMeetingMappingUpdate(ctx, key, v1Data)
+	case "itx-zoom-past-meetings-recordings":
+		handleZoomPastMeetingRecordingUpdate(ctx, key, v1Data)
+	case "itx-zoom-past-meetings-summaries":
+		handleZoomPastMeetingSummaryUpdate(ctx, key, v1Data)
+	case "itx-zoom-past-meetings":
+		handleZoomPastMeetingUpdate(ctx, key, v1Data)
+	default:
 		logger.With("key", key).DebugContext(ctx, "unknown object type, ignoring")
 	}
 }
 
 // handleKVDelete processes a KV delete operation
-func handleKVDelete(ctx context.Context, entry jetstream.KeyValueEntry, _ jetstream.KeyValue, _ jetstream.KeyValue) {
+func handleKVDelete(ctx context.Context, entry jetstream.KeyValueEntry) {
 	key := entry.Key()
 
 	// For deletes, we would need to look up the mapping and call delete APIs
