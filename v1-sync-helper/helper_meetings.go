@@ -16,12 +16,12 @@ import (
 )
 
 const (
-	OccurrenceStatusAvailable = "available"
+	occurrenceStatusAvailable = "available"
 	OccurrenceStatusCancel    = "cancel"
 	MeetingEndBuffer          = 40 * time.Minute
 )
 
-var WeekdaysABBRV = []string{"SU", "MO", "TU", "WE", "TH", "FR", "SA"}
+var weekdaysABBRV = []string{"SU", "MO", "TU", "WE", "TH", "FR", "SA"}
 var typeName = []string{"Daily", "Weekly", "Monthly"}
 
 // CalculateOccurrences generates occurrence objects for a meeting, which can optionally include past or cancelled occurrences
@@ -243,7 +243,7 @@ func CalculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 				}
 
 				updatedOccDurationInt, _ := strconv.Atoi(updatedOcc.Duration)
-				if !pastOccurrences && IsOccurrencePast(time.Unix(unixStartTime, 0), updatedOccDurationInt) {
+				if !pastOccurrences && isOccurrencePast(time.Unix(unixStartTime, 0), updatedOccDurationInt) {
 					logger.With("meeting_id", meeting.ID, "occurrence_id", o.Unix(), "occurrence_start_time", o).DebugContext(ctx, "skipping updated occurrence because it is a past occurrence")
 					continue
 				}
@@ -260,7 +260,7 @@ func CalculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 					Agenda:       updatedOcc.Agenda,
 					StartTime:    time.Unix(unixStartTime, 0).In(location).UTC().Format(time.RFC3339), // stored time as a formatted string
 					Duration:     updatedOcc.Duration,
-					Status:       OccurrenceStatusAvailable,
+					Status:       occurrenceStatusAvailable,
 				}
 				if updateOccAllFollowing != (UpdatedOccurrence{}) {
 					occurrenceObj.Recurrence = updateOccAllFollowing.Recurrence
@@ -312,7 +312,7 @@ func CalculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 
 			// Skip past occurrences if no past occurrences are expected
 			actualDurationInt, _ := strconv.Atoi(actualDuration)
-			if !pastOccurrences && IsOccurrencePast(o, actualDurationInt) {
+			if !pastOccurrences && isOccurrencePast(o, actualDurationInt) {
 				logger.With("meeting_id", meeting.ID, "occurrence_id", o.Unix(), "occurrence_start_time", o).DebugContext(ctx, "skipping past occurrence")
 				continue
 			}
@@ -330,7 +330,7 @@ func CalculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 				OccurrenceID: strconv.FormatInt(actualStartTimeObj.Unix(), 10),
 				StartTime:    actualStartTime,
 				Duration:     actualDuration,
-				Status:       OccurrenceStatusAvailable,
+				Status:       occurrenceStatusAvailable,
 				Topic:        currentTopic,
 				Agenda:       currentAgenda,
 			}
@@ -356,7 +356,7 @@ func CalculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 	return result, nil
 }
 
-func IsOccurrencePast(startTime time.Time, duration int) bool {
+func isOccurrencePast(startTime time.Time, duration int) bool {
 	return startTime.Add(time.Duration(duration) * time.Minute).Add(MeetingEndBuffer).Before(time.Now())
 }
 
@@ -418,7 +418,7 @@ func GetRRule(reccurrence ZoomMeetingRecurrence, endTime *time.Time) (string, er
 		rrule.WriteString(fmt.Sprintf("BYDAY=%s;", s))
 	} else if reccurrence.MonthlyWeek != "" && reccurrence.MonthlyWeekDay != "" {
 		recurrenceMonthlyWeekDayInt, _ := strconv.Atoi(reccurrence.MonthlyWeekDay)
-		rrule.WriteString(fmt.Sprintf("BYDAY=%s%s;", reccurrence.MonthlyWeek, WeekdaysABBRV[recurrenceMonthlyWeekDayInt-1]))
+		rrule.WriteString(fmt.Sprintf("BYDAY=%s%s;", reccurrence.MonthlyWeek, weekdaysABBRV[recurrenceMonthlyWeekDayInt-1]))
 	}
 
 	if reccurrence.MonthlyDay != "" {
@@ -474,7 +474,7 @@ func ParseByDay(days string) (string, error) {
 		if i > 0 {
 			weekdays.WriteString(",")
 		}
-		weekdays.WriteString(WeekdaysABBRV[weekdayNum-1])
+		weekdays.WriteString(weekdaysABBRV[weekdayNum-1])
 	}
 	return weekdays.String(), nil
 }
