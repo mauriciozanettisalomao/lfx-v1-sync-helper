@@ -17,7 +17,7 @@ import (
 
 const (
 	occurrenceStatusAvailable = "available"
-	OccurrenceStatusCancel    = "cancel"
+	occurrenceStatusCancel    = "cancel"
 	MeetingEndBuffer          = 40 * time.Minute
 )
 
@@ -279,7 +279,7 @@ func CalculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 					if !includeCancelled {
 						continue
 					}
-					occurrenceObj.Status = OccurrenceStatusCancel
+					occurrenceObj.Status = occurrenceStatusCancel
 				}
 
 				previousOccurrence = occurrenceObj // set new previous occurrence
@@ -339,7 +339,7 @@ func CalculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 				if !includeCancelled {
 					continue
 				}
-				occurrenceObj.Status = OccurrenceStatusCancel
+				occurrenceObj.Status = occurrenceStatusCancel
 			}
 			previousOccurrence = occurrenceObj // set new previous occurrence
 			logger.With("meeting_id", meeting.ID, "occurrence", occurrenceObj).DebugContext(ctx, "adding occurrence to list of occurrences")
