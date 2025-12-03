@@ -16,16 +16,16 @@ import (
 )
 
 const (
-	OccurrenceStatusAvailable = "available"
-	OccurrenceStatusCancel    = "cancel"
-	MeetingEndBuffer          = 40 * time.Minute
+	occurrenceStatusAvailable = "available"
+	occurrenceStatusCancel    = "cancel"
+	meetingEndBuffer          = 40 * time.Minute
 )
 
-var WeekdaysABBRV = []string{"SU", "MO", "TU", "WE", "TH", "FR", "SA"}
+var weekdaysABBRV = []string{"SU", "MO", "TU", "WE", "TH", "FR", "SA"}
 var typeName = []string{"Daily", "Weekly", "Monthly"}
 
-// CalculateOccurrences generates occurrence objects for a meeting, which can optionally include past or cancelled occurrences
-func CalculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurrences bool, includeCancelled bool, numOccurrencesToReturn int) (result []ZoomMeetingOccurrence, err error) {
+// calculateOccurrences generates occurrence objects for a meeting, which can optionally include past or cancelled occurrences
+func calculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurrences bool, includeCancelled bool, numOccurrencesToReturn int) (result []ZoomMeetingOccurrence, err error) {
 	timerNow := time.Now()
 	// Occurrences only exist for recurring meetings
 	if meeting.Recurrence == nil {
@@ -40,7 +40,7 @@ func CalculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 
 	location := time.UTC
 	if meeting.Timezone != "" {
-		meetingStartTime, err = TimeInLocation(meetingStartTime, meeting.Timezone)
+		meetingStartTime, err = timeInLocation(meetingStartTime, meeting.Timezone)
 		if err != nil {
 			return nil, err
 		}
@@ -134,13 +134,13 @@ func CalculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 			return nil, err
 		}
 		recStartTime := time.Unix(unixStartTime, 0)
-		recStartTime, err = TimeInLocation(recStartTime, meeting.Timezone)
+		recStartTime, err = timeInLocation(recStartTime, meeting.Timezone)
 		if err != nil {
 			return nil, err
 		}
 
 		// Get occurrences based on reccurrence pattern and start time
-		occurrences, err := GetRRuleOccurrences(recStartTime, meeting.Timezone, occurrencePattern.Recurrence, nil)
+		occurrences, err := getRRuleOccurrences(recStartTime, meeting.Timezone, occurrencePattern.Recurrence, nil)
 		if err != nil {
 			logger.With(errKey, err, "meeting_id", meeting.ID, "start_time", recStartTime, "recurrence_rrule", occurrencePattern.Recurrence).ErrorContext(ctx, "failed to get recurrence rule")
 			return nil, err
@@ -243,7 +243,7 @@ func CalculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 				}
 
 				updatedOccDurationInt, _ := strconv.Atoi(updatedOcc.Duration)
-				if !pastOccurrences && IsOccurrencePast(time.Unix(unixStartTime, 0), updatedOccDurationInt) {
+				if !pastOccurrences && isOccurrencePast(time.Unix(unixStartTime, 0), updatedOccDurationInt) {
 					logger.With("meeting_id", meeting.ID, "occurrence_id", o.Unix(), "occurrence_start_time", o).DebugContext(ctx, "skipping updated occurrence because it is a past occurrence")
 					continue
 				}
@@ -260,7 +260,7 @@ func CalculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 					Agenda:       updatedOcc.Agenda,
 					StartTime:    time.Unix(unixStartTime, 0).In(location).UTC().Format(time.RFC3339), // stored time as a formatted string
 					Duration:     updatedOcc.Duration,
-					Status:       OccurrenceStatusAvailable,
+					Status:       occurrenceStatusAvailable,
 				}
 				if updateOccAllFollowing != (UpdatedOccurrence{}) {
 					occurrenceObj.Recurrence = updateOccAllFollowing.Recurrence
@@ -279,7 +279,7 @@ func CalculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 					if !includeCancelled {
 						continue
 					}
-					occurrenceObj.Status = OccurrenceStatusCancel
+					occurrenceObj.Status = occurrenceStatusCancel
 				}
 
 				previousOccurrence = occurrenceObj // set new previous occurrence
@@ -312,7 +312,7 @@ func CalculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 
 			// Skip past occurrences if no past occurrences are expected
 			actualDurationInt, _ := strconv.Atoi(actualDuration)
-			if !pastOccurrences && IsOccurrencePast(o, actualDurationInt) {
+			if !pastOccurrences && isOccurrencePast(o, actualDurationInt) {
 				logger.With("meeting_id", meeting.ID, "occurrence_id", o.Unix(), "occurrence_start_time", o).DebugContext(ctx, "skipping past occurrence")
 				continue
 			}
@@ -330,7 +330,7 @@ func CalculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 				OccurrenceID: strconv.FormatInt(actualStartTimeObj.Unix(), 10),
 				StartTime:    actualStartTime,
 				Duration:     actualDuration,
-				Status:       OccurrenceStatusAvailable,
+				Status:       occurrenceStatusAvailable,
 				Topic:        currentTopic,
 				Agenda:       currentAgenda,
 			}
@@ -339,7 +339,7 @@ func CalculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 				if !includeCancelled {
 					continue
 				}
-				occurrenceObj.Status = OccurrenceStatusCancel
+				occurrenceObj.Status = occurrenceStatusCancel
 			}
 			previousOccurrence = occurrenceObj // set new previous occurrence
 			logger.With("meeting_id", meeting.ID, "occurrence", occurrenceObj).DebugContext(ctx, "adding occurrence to list of occurrences")
@@ -356,14 +356,14 @@ func CalculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 	return result, nil
 }
 
-func IsOccurrencePast(startTime time.Time, duration int) bool {
-	return startTime.Add(time.Duration(duration) * time.Minute).Add(MeetingEndBuffer).Before(time.Now())
+func isOccurrencePast(startTime time.Time, duration int) bool {
+	return startTime.Add(time.Duration(duration) * time.Minute).Add(meetingEndBuffer).Before(time.Now())
 }
 
-// TimeInLocation returns error if name is invalid or empty.
+// timeInLocation returns error if name is invalid or empty.
 // Otherwise, it returns the time for the given location. Example:
 // if name == "Asia/Shanghai", returned time is in "Asia/Shanghai".
-func TimeInLocation(t time.Time, name string) (time.Time, error) {
+func timeInLocation(t time.Time, name string) (time.Time, error) {
 	loc, err := time.LoadLocation(name)
 	if err != nil {
 		return time.Time{}, err
@@ -372,16 +372,16 @@ func TimeInLocation(t time.Time, name string) (time.Time, error) {
 	return t.In(loc), err
 }
 
-// GetRRuleOccurrences given a start time, optional timezone, and recurrence pattern, calculates and returns
+// getRRuleOccurrences given a start time, optional timezone, and recurrence pattern, calculates and returns
 // the list of occurrence times
-func GetRRuleOccurrences(startTime time.Time, timezone string, recurrence *ZoomMeetingRecurrence, endTime *time.Time) ([]time.Time, error) {
-	rruleString, err := GetRRule(*recurrence, endTime)
+func getRRuleOccurrences(startTime time.Time, timezone string, recurrence *ZoomMeetingRecurrence, endTime *time.Time) ([]time.Time, error) {
+	rruleString, err := getRRule(*recurrence, endTime)
 	if err != nil {
 		return nil, err
 	}
 
 	if timezone != "" {
-		startTime, err = TimeInLocation(startTime, timezone)
+		startTime, err = timeInLocation(startTime, timezone)
 		if err != nil {
 			return nil, err
 		}
@@ -398,8 +398,8 @@ func GetRRuleOccurrences(startTime time.Time, timezone string, recurrence *ZoomM
 	return set.All(), nil
 }
 
-// GetRRule returns the recurrence rule for a meeting recurrence as a string
-func GetRRule(reccurrence ZoomMeetingRecurrence, endTime *time.Time) (string, error) {
+// getRRule returns the recurrence rule for a meeting recurrence as a string
+func getRRule(reccurrence ZoomMeetingRecurrence, endTime *time.Time) (string, error) {
 	var rrule strings.Builder
 
 	recurrenceTypeInt, _ := strconv.Atoi(reccurrence.Type)
@@ -411,14 +411,14 @@ func GetRRule(reccurrence ZoomMeetingRecurrence, endTime *time.Time) (string, er
 	}
 
 	if reccurrence.WeeklyDays != "" {
-		s, err := ParseByDay(reccurrence.WeeklyDays)
+		s, err := parseByDay(reccurrence.WeeklyDays)
 		if err != nil {
 			return "", err
 		}
 		rrule.WriteString(fmt.Sprintf("BYDAY=%s;", s))
 	} else if reccurrence.MonthlyWeek != "" && reccurrence.MonthlyWeekDay != "" {
 		recurrenceMonthlyWeekDayInt, _ := strconv.Atoi(reccurrence.MonthlyWeekDay)
-		rrule.WriteString(fmt.Sprintf("BYDAY=%s%s;", reccurrence.MonthlyWeek, WeekdaysABBRV[recurrenceMonthlyWeekDayInt-1]))
+		rrule.WriteString(fmt.Sprintf("BYDAY=%s%s;", reccurrence.MonthlyWeek, weekdaysABBRV[recurrenceMonthlyWeekDayInt-1]))
 	}
 
 	if reccurrence.MonthlyDay != "" {
@@ -455,10 +455,10 @@ func GetRRule(reccurrence ZoomMeetingRecurrence, endTime *time.Time) (string, er
 	return strings.TrimSuffix(rrule.String(), ";"), nil
 }
 
-// ParseByDay takes a list of weekdays as a string and returns the list of
+// parseByDay takes a list of weekdays as a string and returns the list of
 // abbreviations as a string where 1 is Sunday and 7 is Saturday
 // (e.g. "2,3,6" -> "MO,TU,FR")
-func ParseByDay(days string) (string, error) {
+func parseByDay(days string) (string, error) {
 	stringSlice := strings.Split(days, ",")
 	var weekdays strings.Builder
 	for i, item := range stringSlice {
@@ -474,7 +474,7 @@ func ParseByDay(days string) (string, error) {
 		if i > 0 {
 			weekdays.WriteString(",")
 		}
-		weekdays.WriteString(WeekdaysABBRV[weekdayNum-1])
+		weekdays.WriteString(weekdaysABBRV[weekdayNum-1])
 	}
 	return weekdays.String(), nil
 }
