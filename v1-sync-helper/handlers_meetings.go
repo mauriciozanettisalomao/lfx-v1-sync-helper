@@ -414,7 +414,7 @@ func handleZoomMeetingMappingUpdate(ctx context.Context, key string, v1Data map[
 
 		// Send meeting indexer message with the meeting data
 		tags := getMeetingTags(meeting)
-		if err := sendIndexerMessage(ctx, IndexV1MeetingSubject, indexerAction, meetingData, tags); err != nil {
+		if err := sendIndexerMessage(ctx, IndexV1MeetingSubject, indexerAction, meeting, tags); err != nil {
 			logger.With(errKey, err, "meeting_id", meetingID, "key", key).ErrorContext(ctx, "failed to send meeting indexer message")
 			return
 		}
@@ -868,7 +868,7 @@ func handleZoomPastMeetingMappingUpdate(ctx context.Context, key string, v1Data 
 
 		// Send past meeting indexer message with the past meeting data
 		tags := getPastMeetingTags(pastMeeting)
-		if err := sendIndexerMessage(ctx, IndexV1PastMeetingSubject, indexerAction, pastMeetingData, tags); err != nil {
+		if err := sendIndexerMessage(ctx, IndexV1PastMeetingSubject, indexerAction, pastMeeting, tags); err != nil {
 			logger.With(errKey, err, "meeting_and_occurrence_id", meetingAndOccurrenceID, "key", key).ErrorContext(ctx, "failed to send past meeting indexer message")
 			return
 		}
@@ -1346,7 +1346,7 @@ func convertAttendeeToV2Participant(ctx context.Context, attendee *PastMeetingAt
 				logger.With(errKey, err, "join_time", session.JoinTime).ErrorContext(ctx, "failed to parse join_time")
 				return nil, fmt.Errorf("failed to parse join_time: %w", err)
 			}
-			participantSession.JoinTime = joinTime
+			participantSession.JoinTime = &joinTime
 		}
 
 		if session.LeaveTime != "" {
@@ -1394,6 +1394,35 @@ func convertMapToInputPastMeetingRecording(ctx context.Context, v1Data map[strin
 	if err := json.Unmarshal(jsonBytes, &recording); err != nil {
 		logger.With(errKey, err).ErrorContext(ctx, "failed to unmarshal JSON into PastMeetingRecordingInput")
 		return nil, fmt.Errorf("failed to unmarshal JSON into PastMeetingRecordingInput: %w", err)
+	}
+
+	// Populate the ID for the v2 system with the partition key from v1.
+	if meetingAndOccurrenceID, ok := v1Data["meeting_and_occurrence_id"].(string); ok && meetingAndOccurrenceID != "" {
+		recording.ID = meetingAndOccurrenceID
+	}
+
+	// We should set a default recording access if it is not set, to ensure it can have its access relationships
+	// created by the fga-sync service, which requires it to be set.
+	if recording.RecordingAccess == "" {
+		// This recording access comes from the enum for the field: [public, meeting_hosts, meeting_participants]
+		// We want to default to meeting hosts only access to keep it as restrictive as possible.
+		recording.RecordingAccess = "meeting_hosts"
+	}
+
+	// Check if the recording has a transcript and set the transcript enabled and access if it does
+	// and wasn't already populated from the v1 data.
+	var hasTranscript = false
+	for _, file := range recording.RecordingFiles {
+		if file.FileType == "TRANSCRIPT" || file.FileType == "TIMELINE" {
+			hasTranscript = true
+			break
+		}
+	}
+	if hasTranscript && !recording.TranscriptEnabled {
+		recording.TranscriptEnabled = true
+	}
+	if hasTranscript && recording.TranscriptAccess == "" {
+		recording.TranscriptAccess = "meeting_hosts"
 	}
 
 	return &recording, nil
