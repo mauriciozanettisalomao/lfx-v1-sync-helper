@@ -125,7 +125,7 @@ func sendIndexerMessage(ctx context.Context, subject string, action MessageActio
 
 // sendAccessMessage sends a pre-marshalled message to the NATS server.
 // This is a generic function that can be used for access control updates, put operations, etc.
-func sendAccessMessage(ctx context.Context, subject string, messageBytes []byte) error {
+func sendAccessMessage(subject string, messageBytes []byte) error {
 	// Publish the message to NATS
 	if err := natsConn.Publish(subject, messageBytes); err != nil {
 		return fmt.Errorf("failed to publish message to subject %s: %w", subject, err)
@@ -288,7 +288,7 @@ func handleZoomMeetingUpdate(ctx context.Context, key string, v1Data map[string]
 		return
 	}
 
-	if err := sendAccessMessage(ctx, UpdateAccessV1MeetingSubject, accessMsgBytes); err != nil {
+	if err := sendAccessMessage(UpdateAccessV1MeetingSubject, accessMsgBytes); err != nil {
 		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to send meeting access message")
 		return
 	}
@@ -303,7 +303,7 @@ func handleZoomMeetingUpdate(ctx context.Context, key string, v1Data map[string]
 }
 
 // convertMapToInputMeeting converts a map[string]any to an InputMeeting struct.
-func convertMapToInputMeetingMapping(ctx context.Context, v1Data map[string]any) (*ZoomMeetingMappingDB, error) {
+func convertMapToInputMeetingMapping(v1Data map[string]any) (*ZoomMeetingMappingDB, error) {
 	// Convert map to JSON bytes
 	jsonBytes, err := json.Marshal(v1Data)
 	if err != nil {
@@ -338,7 +338,7 @@ func handleZoomMeetingMappingUpdate(ctx context.Context, key string, v1Data map[
 	funcLogger.DebugContext(ctx, "processing zoom meeting mapping update")
 
 	// Convert v1Data map to ZoomMeetingMappingDB struct
-	mapping, err := convertMapToInputMeetingMapping(ctx, v1Data)
+	mapping, err := convertMapToInputMeetingMapping(v1Data)
 	if err != nil {
 		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to convert v1Data to ZoomMeetingMappingDB")
 		return
@@ -430,7 +430,7 @@ func handleZoomMeetingMappingUpdate(ctx context.Context, key string, v1Data map[
 			return
 		}
 
-		if err := sendAccessMessage(ctx, UpdateAccessV1MeetingSubject, accessMsgBytes); err != nil {
+		if err := sendAccessMessage(UpdateAccessV1MeetingSubject, accessMsgBytes); err != nil {
 			funcLogger.With(errKey, err, "meeting_id", meetingID).ErrorContext(ctx, "failed to send meeting access message")
 			return
 		}
@@ -465,7 +465,7 @@ func handleZoomMeetingMappingUpdate(ctx context.Context, key string, v1Data map[
 }
 
 // convertMapToInputRegistrant converts a map[string]any to a RegistrantInput struct.
-func convertMapToInputRegistrant(ctx context.Context, v1Data map[string]any) (*registrantInput, error) {
+func convertMapToInputRegistrant(v1Data map[string]any) (*registrantInput, error) {
 	// Convert map to JSON bytes
 	jsonBytes, err := json.Marshal(v1Data)
 	if err != nil {
@@ -522,7 +522,7 @@ func handleZoomMeetingRegistrantUpdate(ctx context.Context, key string, v1Data m
 	funcLogger.DebugContext(ctx, "processing zoom meeting registrant update")
 
 	// Convert v1Data map to RegistrantInput struct
-	registrant, err := convertMapToInputRegistrant(ctx, v1Data)
+	registrant, err := convertMapToInputRegistrant(v1Data)
 	if err != nil {
 		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to convert v1Data to registrantInput")
 		return
@@ -589,7 +589,7 @@ func handleZoomMeetingRegistrantUpdate(ctx context.Context, key string, v1Data m
 			return
 		}
 
-		if err := sendAccessMessage(ctx, V1MeetingRegistrantPutSubject, accessMsgBytes); err != nil {
+		if err := sendAccessMessage(V1MeetingRegistrantPutSubject, accessMsgBytes); err != nil {
 			funcLogger.With(errKey, err).ErrorContext(ctx, "failed to send registrant put message")
 			return
 		}
@@ -604,7 +604,7 @@ func handleZoomMeetingRegistrantUpdate(ctx context.Context, key string, v1Data m
 	funcLogger.InfoContext(ctx, "successfully sent registrant indexer and put messages")
 }
 
-func convertMapToInputInviteResponse(ctx context.Context, v1Data map[string]any) (*inviteResponseInput, error) {
+func convertMapToInputInviteResponse(v1Data map[string]any) (*inviteResponseInput, error) {
 	// Convert map to JSON bytes
 	jsonBytes, err := json.Marshal(v1Data)
 	if err != nil {
@@ -670,7 +670,7 @@ func handleZoomMeetingInviteResponseUpdate(ctx context.Context, key string, v1Da
 	funcLogger.DebugContext(ctx, "processing zoom meeting invite response update")
 
 	// Convert v1Data map to InviteResponseInput struct
-	inviteResponse, err := convertMapToInputInviteResponse(ctx, v1Data)
+	inviteResponse, err := convertMapToInputInviteResponse(v1Data)
 	if err != nil {
 		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to convert v1Data to inviteResponseInput")
 		return
@@ -886,7 +886,7 @@ func handleZoomPastMeetingUpdate(ctx context.Context, key string, v1Data map[str
 		return
 	}
 
-	if err := sendAccessMessage(ctx, V1PastMeetingUpdateAccessSubject, accessMsgBytes); err != nil {
+	if err := sendAccessMessage(V1PastMeetingUpdateAccessSubject, accessMsgBytes); err != nil {
 		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to send past meeting access message")
 		return
 	}
@@ -901,7 +901,7 @@ func handleZoomPastMeetingUpdate(ctx context.Context, key string, v1Data map[str
 }
 
 // convertMapToInputPastMeetingMapping converts a map[string]any to a ZoomPastMeetingMappingDB struct.
-func convertMapToInputPastMeetingMapping(ctx context.Context, v1Data map[string]any) (*ZoomPastMeetingMappingDB, error) {
+func convertMapToInputPastMeetingMapping(v1Data map[string]any) (*ZoomPastMeetingMappingDB, error) {
 	// Convert map to JSON bytes
 	jsonBytes, err := json.Marshal(v1Data)
 	if err != nil {
@@ -930,7 +930,7 @@ func handleZoomPastMeetingMappingUpdate(ctx context.Context, key string, v1Data 
 	funcLogger.DebugContext(ctx, "processing zoom past meeting mapping update")
 
 	// Convert v1Data map to ZoomPastMeetingMappingDB struct
-	mapping, err := convertMapToInputPastMeetingMapping(ctx, v1Data)
+	mapping, err := convertMapToInputPastMeetingMapping(v1Data)
 	if err != nil {
 		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to convert v1Data to ZoomPastMeetingMappingDB")
 		return
@@ -1018,7 +1018,7 @@ func handleZoomPastMeetingMappingUpdate(ctx context.Context, key string, v1Data 
 			return
 		}
 
-		if err := sendAccessMessage(ctx, V1PastMeetingUpdateAccessSubject, accessMsgBytes); err != nil {
+		if err := sendAccessMessage(V1PastMeetingUpdateAccessSubject, accessMsgBytes); err != nil {
 			funcLogger.With(errKey, err).ErrorContext(ctx, "failed to send past meeting access message")
 			return
 		}
@@ -1063,7 +1063,7 @@ type PastMeetingParticipantAccessMessage struct {
 }
 
 // convertMapToInputPastMeetingInvitee converts a map[string]any to a ZoomPastMeetingInviteeDatabase struct.
-func convertMapToInputPastMeetingInvitee(ctx context.Context, v1Data map[string]any) (*ZoomPastMeetingInviteeDatabase, error) {
+func convertMapToInputPastMeetingInvitee(v1Data map[string]any) (*ZoomPastMeetingInviteeDatabase, error) {
 	// Convert map to JSON bytes
 	jsonBytes, err := json.Marshal(v1Data)
 	if err != nil {
@@ -1111,7 +1111,7 @@ func handleZoomPastMeetingInviteeUpdate(ctx context.Context, key string, v1Data 
 	funcLogger.DebugContext(ctx, "processing zoom past meeting invitee update")
 
 	// Convert v1Data map to PastMeetingInviteeInput struct
-	invitee, err := convertMapToInputPastMeetingInvitee(ctx, v1Data)
+	invitee, err := convertMapToInputPastMeetingInvitee(v1Data)
 	if err != nil {
 		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to convert v1Data to PastMeetingInviteeInput")
 		return
@@ -1160,7 +1160,7 @@ func handleZoomPastMeetingInviteeUpdate(ctx context.Context, key string, v1Data 
 		}
 	}
 
-	v2Participant, err := convertInviteeToV2Participant(ctx, invitee, isHost)
+	v2Participant, err := convertInviteeToV2Participant(invitee, isHost)
 	if err != nil {
 		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to convert invitee to V2 participant")
 		return
@@ -1209,7 +1209,7 @@ func handleZoomPastMeetingInviteeUpdate(ctx context.Context, key string, v1Data 
 			return
 		}
 
-		if err := sendAccessMessage(ctx, V1PastMeetingParticipantPutSubject, accessMsgBytes); err != nil {
+		if err := sendAccessMessage(V1PastMeetingParticipantPutSubject, accessMsgBytes); err != nil {
 			funcLogger.With(errKey, err).ErrorContext(ctx, "failed to send invitee access message")
 			return
 		}
@@ -1224,7 +1224,7 @@ func handleZoomPastMeetingInviteeUpdate(ctx context.Context, key string, v1Data 
 	funcLogger.InfoContext(ctx, "successfully sent invitee indexer and access messages")
 }
 
-func convertInviteeToV2Participant(ctx context.Context, invitee *ZoomPastMeetingInviteeDatabase, isHost bool) (*V2PastMeetingParticipant, error) {
+func convertInviteeToV2Participant(invitee *ZoomPastMeetingInviteeDatabase, isHost bool) (*V2PastMeetingParticipant, error) {
 	pastMeetingParticipant := V2PastMeetingParticipant{
 		UID:            invitee.ID,
 		PastMeetingUID: invitee.MeetingAndOccurrenceID,
@@ -1249,7 +1249,7 @@ func convertInviteeToV2Participant(ctx context.Context, invitee *ZoomPastMeeting
 				"created_at", invitee.CreatedAt,
 				"invitee_id", invitee.ID,
 				"meeting_and_occurrence_id", invitee.MeetingAndOccurrenceID,
-			).WarnContext(ctx, "failed to parse created_at for invitee %s", invitee.ID)
+			).Warn("failed to parse created_at for invitee")
 		} else {
 			pastMeetingParticipant.CreatedAt = &createdAt
 		}
@@ -1262,7 +1262,7 @@ func convertInviteeToV2Participant(ctx context.Context, invitee *ZoomPastMeeting
 				"modified_at", invitee.ModifiedAt,
 				"invitee_id", invitee.ID,
 				"meeting_and_occurrence_id", invitee.MeetingAndOccurrenceID,
-			).WarnContext(ctx, "failed to parse modified_at for invitee %s", invitee.ID)
+			).Warn("failed to parse modified_at for invitee")
 		} else {
 			pastMeetingParticipant.UpdatedAt = &modifiedAt
 		}
@@ -1279,7 +1279,7 @@ func convertInviteeToV2Participant(ctx context.Context, invitee *ZoomPastMeeting
 }
 
 // convertMapToInputPastMeetingAttendee converts a map[string]any to a PastMeetingAttendeeInput struct.
-func convertMapToInputPastMeetingAttendee(ctx context.Context, v1Data map[string]any) (*PastMeetingAttendeeInput, error) {
+func convertMapToInputPastMeetingAttendee(v1Data map[string]any) (*PastMeetingAttendeeInput, error) {
 	// Convert map to JSON bytes
 	jsonBytes, err := json.Marshal(v1Data)
 	if err != nil {
@@ -1307,7 +1307,7 @@ func handleZoomPastMeetingAttendeeUpdate(ctx context.Context, key string, v1Data
 	funcLogger.DebugContext(ctx, "processing zoom past meeting attendee update")
 
 	// Convert v1Data map to PastMeetingAttendeeInput struct
-	attendee, err := convertMapToInputPastMeetingAttendee(ctx, v1Data)
+	attendee, err := convertMapToInputPastMeetingAttendee(v1Data)
 	if err != nil {
 		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to convert v1Data to PastMeetingAttendeeInput")
 		return
@@ -1364,7 +1364,7 @@ func handleZoomPastMeetingAttendeeUpdate(ctx context.Context, key string, v1Data
 		indexerAction = MessageActionUpdated
 	}
 
-	v2Participant, err := convertAttendeeToV2Participant(ctx, attendee, isHost, isRegistrant)
+	v2Participant, err := convertAttendeeToV2Participant(attendee, isHost, isRegistrant)
 	if err != nil {
 		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to convert attendee to V2 participant")
 		return
@@ -1407,7 +1407,7 @@ func handleZoomPastMeetingAttendeeUpdate(ctx context.Context, key string, v1Data
 			return
 		}
 
-		if err := sendAccessMessage(ctx, V1PastMeetingParticipantPutSubject, accessMsgBytes); err != nil {
+		if err := sendAccessMessage(V1PastMeetingParticipantPutSubject, accessMsgBytes); err != nil {
 			funcLogger.With(errKey, err).ErrorContext(ctx, "failed to send attendee access message")
 			return
 		}
@@ -1422,7 +1422,7 @@ func handleZoomPastMeetingAttendeeUpdate(ctx context.Context, key string, v1Data
 	funcLogger.InfoContext(ctx, "successfully sent attendee indexer and access messages")
 }
 
-func convertAttendeeToV2Participant(ctx context.Context, attendee *PastMeetingAttendeeInput, isHost bool, isRegistrant bool) (*V2PastMeetingParticipant, error) {
+func convertAttendeeToV2Participant(attendee *PastMeetingAttendeeInput, isHost bool, isRegistrant bool) (*V2PastMeetingParticipant, error) {
 	var firstName, lastName string
 	namesSplit := strings.Split(attendee.Name, " ")
 	if len(namesSplit) >= 2 {
@@ -1457,7 +1457,7 @@ func convertAttendeeToV2Participant(ctx context.Context, attendee *PastMeetingAt
 				"created_at", attendee.CreatedAt,
 				"attendee_id", attendee.ID,
 				"meeting_and_occurrence_id", attendee.MeetingAndOccurrenceID,
-			).WarnContext(ctx, "failed to parse created_at for attendee %s", attendee.ID)
+			).Warn("failed to parse created_at for attendee")
 		} else {
 			pastMeetingParticipant.CreatedAt = &createdAt
 		}
@@ -1470,7 +1470,7 @@ func convertAttendeeToV2Participant(ctx context.Context, attendee *PastMeetingAt
 				"modified_at", attendee.ModifiedAt,
 				"attendee_id", attendee.ID,
 				"meeting_and_occurrence_id", attendee.MeetingAndOccurrenceID,
-			).WarnContext(ctx, "failed to parse modified_at for attendee %s", attendee.ID)
+			).Warn("failed to parse modified_at for attendee")
 		} else {
 			pastMeetingParticipant.UpdatedAt = &modifiedAt
 		}
@@ -1498,7 +1498,7 @@ func convertAttendeeToV2Participant(ctx context.Context, attendee *PastMeetingAt
 					"session_id", session.ParticipantUUID,
 					"attendee_id", attendee.ID,
 					"meeting_and_occurrence_id", attendee.MeetingAndOccurrenceID,
-				).WarnContext(ctx, "failed to parse join_time for attendee %s", attendee.ID)
+				).Warn("failed to parse join_time for attendee")
 			} else {
 				participantSession.JoinTime = &joinTime
 			}
@@ -1512,7 +1512,7 @@ func convertAttendeeToV2Participant(ctx context.Context, attendee *PastMeetingAt
 					"session_id", session.ParticipantUUID,
 					"attendee_id", attendee.ID,
 					"meeting_and_occurrence_id", attendee.MeetingAndOccurrenceID,
-				).WarnContext(ctx, "failed to parse leave_time for attendee %s", attendee.ID)
+				).Warn("failed to parse leave_time for attendee")
 			} else {
 				participantSession.LeaveTime = &leaveTime
 			}
@@ -1541,7 +1541,7 @@ type PastMeetingTranscriptAccessMessage struct {
 }
 
 // convertMapToInputPastMeetingRecording converts a map[string]any to a PastMeetingRecordingInput struct.
-func convertMapToInputPastMeetingRecording(ctx context.Context, v1Data map[string]any) (*PastMeetingRecordingInput, error) {
+func convertMapToInputPastMeetingRecording(v1Data map[string]any) (*PastMeetingRecordingInput, error) {
 	// Convert map to JSON bytes
 	jsonBytes, err := json.Marshal(v1Data)
 	if err != nil {
@@ -1630,7 +1630,7 @@ func handleZoomPastMeetingRecordingUpdate(ctx context.Context, key string, v1Dat
 	funcLogger.DebugContext(ctx, "processing zoom past meeting recording update")
 
 	// Convert the v1Data map to PastMeetingRecordingInput struct
-	recordingInput, err := convertMapToInputPastMeetingRecording(ctx, v1Data)
+	recordingInput, err := convertMapToInputPastMeetingRecording(v1Data)
 	if err != nil {
 		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to convert v1Data to PastMeetingRecordingInput")
 		return
@@ -1680,7 +1680,7 @@ func handleZoomPastMeetingRecordingUpdate(ctx context.Context, key string, v1Dat
 	}
 
 	// Send recording access message
-	if err := sendAccessMessage(ctx, V1PastMeetingRecordingUpdateAccessSubject, recordingAccessMsgBytes); err != nil {
+	if err := sendAccessMessage(V1PastMeetingRecordingUpdateAccessSubject, recordingAccessMsgBytes); err != nil {
 		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to send recording access message")
 		return
 	}
@@ -1707,7 +1707,7 @@ func handleZoomPastMeetingRecordingUpdate(ctx context.Context, key string, v1Dat
 	}
 
 	// Send transcript access message
-	if err := sendAccessMessage(ctx, V1PastMeetingTranscriptUpdateAccessSubject, transcriptAccessMsgBytes); err != nil {
+	if err := sendAccessMessage(V1PastMeetingTranscriptUpdateAccessSubject, transcriptAccessMsgBytes); err != nil {
 		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to send transcript access message")
 		return
 	}
@@ -1730,7 +1730,7 @@ type PastMeetingSummaryAccessMessage struct {
 }
 
 // convertMapToInputPastMeetingSummary converts a map[string]any to a PastMeetingSummaryInput struct.
-func convertMapToInputPastMeetingSummary(ctx context.Context, v1Data map[string]any) (*PastMeetingSummaryInput, error) {
+func convertMapToInputPastMeetingSummary(v1Data map[string]any) (*PastMeetingSummaryInput, error) {
 	// Convert map to JSON bytes
 	jsonBytes, err := json.Marshal(v1Data)
 	if err != nil {
@@ -1771,7 +1771,7 @@ func handleZoomPastMeetingSummaryUpdate(ctx context.Context, key string, v1Data 
 	funcLogger.DebugContext(ctx, "processing zoom past meeting summary update")
 
 	// Convert the v1Data map to PastMeetingSummaryInput struct
-	summaryInput, err := convertMapToInputPastMeetingSummary(ctx, v1Data)
+	summaryInput, err := convertMapToInputPastMeetingSummary(v1Data)
 	if err != nil {
 		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to convert v1Data to PastMeetingSummaryInput")
 		return
@@ -1843,7 +1843,7 @@ func handleZoomPastMeetingSummaryUpdate(ctx context.Context, key string, v1Data 
 	}
 
 	// Send summary access message
-	if err := sendAccessMessage(ctx, V1PastMeetingSummaryUpdateAccessSubject, summaryAccessMsgBytes); err != nil {
+	if err := sendAccessMessage(V1PastMeetingSummaryUpdateAccessSubject, summaryAccessMsgBytes); err != nil {
 		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to send summary access message")
 		return
 	}
