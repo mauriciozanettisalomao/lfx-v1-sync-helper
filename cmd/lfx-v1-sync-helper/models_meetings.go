@@ -182,10 +182,10 @@ type meetingInput struct {
 	// Duration is the duration of the meeting in minutes.
 	Duration int `json:"-"`
 
-	// EarlyJoinTime is the time in minutes before the meeting start time that the user can join the meeting.
+	// EarlyJoinTimeMinutes is the time in minutes before the meeting start time that the user can join the meeting.
 	// This is needed because these meetings are scheduled on shared Zoom users and thus the meeting scheduler
 	// needs to account for this early join time buffer.
-	EarlyJoinTime int `json:"-"` // in minutes
+	EarlyJoinTimeMinutes int `json:"-"`
 
 	// LastEndTime is the end time of the last occurrence of the meeting in unix timestamp format.
 	// If the meeting is a non-recurring meeting, this is the end time of the one-time meeting.
@@ -319,7 +319,7 @@ func (m meetingInput) MarshalJSON() ([]byte, error) {
 	type Alias meetingInput
 	return json.Marshal(&struct {
 		Duration                                  int   `json:"duration"`
-		EarlyJoinTime                             int   `json:"early_join_time"`
+		EarlyJoinTimeMinutes                      int   `json:"early_join_time_minutes"`
 		LastEndTime                               int64 `json:"last_end_time"`
 		LastBulkRegistrantsJobFailedCount         int   `json:"last_bulk_registrants_job_failed_count"`
 		LastBulkRegistrantsJobWarningCount        int   `json:"last_bulk_registrants_job_warning_count"`
@@ -328,7 +328,7 @@ func (m meetingInput) MarshalJSON() ([]byte, error) {
 		*Alias
 	}{
 		Duration:                                  m.Duration,
-		EarlyJoinTime:                             m.EarlyJoinTime,
+		EarlyJoinTimeMinutes:                      m.EarlyJoinTimeMinutes,
 		LastEndTime:                               m.LastEndTime,
 		LastBulkRegistrantsJobFailedCount:         m.LastBulkRegistrantsJobFailedCount,
 		LastBulkRegistrantsJobWarningCount:        m.LastBulkRegistrantsJobWarningCount,
@@ -338,6 +338,7 @@ func (m meetingInput) MarshalJSON() ([]byte, error) {
 	})
 }
 
+// ZoomConfig is the configuration of the meeting in Zoom.
 type ZoomConfig struct {
 	MeetingID                string `json:"meeting_id,omitempty"`
 	Passcode                 string `json:"passcode,omitempty"`
@@ -409,23 +410,20 @@ type ZoomMeetingMappingDB struct {
 
 // registrantInput represents input data for meeting registrants.
 type registrantInput struct {
-	// ID is the [RegistrantID] attribute renamed
-	ID string `json:"id"` // v2 attribute
+	// UID is the partition key of the registrant (it is a UUID)
+	UID string `json:"uid"` // v2 attribute
 
-	// RegistrantID is the partition key of the registrant (it is a UUID)
-	RegistrantID string `json:"registrant_id"`
-
-	// MeetingID is the ID of the meeting that the registrant is associated with.
+	// MeetingUID is the UID of the meeting that the registrant is associated with.
 	// It is a Global Secondary Index on the registrant table.
-	MeetingID string `json:"meeting_id"`
+	MeetingUID string `json:"meeting_uid"`
 
 	// Type is the type of registrant
 	Type string `json:"type"`
 
-	// CommitteeID is the ID of the committee that the registrant is associated with.
+	// CommitteeUID is the UID of the committee that the registrant is associated with.
 	// It is only relevant if the [Type] field is [RegistrantTypeCommittee].
 	// It is a Global Secondary Index on the registrant table.
-	CommitteeID string `json:"committee_id"`
+	CommitteeUID string `json:"committee_uid"`
 
 	// UserID is the ID of the user that the registrant is associated with.
 	// It is a Global Secondary Index on the registrant table.
@@ -446,14 +444,14 @@ type registrantInput struct {
 	// LastName is the last name of the registrant
 	LastName string `json:"last_name"`
 
-	// Org is the organization of the registrant
-	Org string `json:"org,omitempty"`
+	// OrgName is the name of the organization of the registrant
+	OrgName string `json:"org_name,omitempty"`
 
-	// OrgIsMember is a flag that indicates if the [Org] field is an organization that is a member of
+	// OrgIsMember is a flag that indicates if the [OrgName] field is an organization that is a member of
 	// the Linux Foundation.
 	OrgIsMember *bool `json:"org_is_member,omitempty"`
 
-	// OrgIsProjectMember is a flag that indicates if the [Org] field is an organization that is a member of
+	// OrgIsProjectMember is a flag that indicates if the [OrgName] field is an organization that is a member of
 	// the LF project that the meeting is associated with.
 	OrgIsProjectMember *bool `json:"org_is_project_member,omitempty"`
 
@@ -469,8 +467,8 @@ type registrantInput struct {
 	// If this is unset, then the registrant is invited to all occurrences of the meeting.
 	Occurrence string `json:"occurrence,omitempty"`
 
-	// ProfilePicture is the profile picture of the registrant
-	ProfilePicture string `json:"profile_picture"`
+	// AvatarURL is the profile picture of the registrant
+	AvatarURL string `json:"avatar_url"`
 
 	// Username is the LF username of the registrant
 	// It is a Global Secondary Index on the registrant table.
@@ -508,8 +506,8 @@ type registrantInput struct {
 	// CreatedAt is the timestamp in RFC3339 format of when the registrant was created
 	CreatedAt string `json:"created_at"`
 
-	// ModifiedAt is the timestamp in RFC3339 format of when the registrant was last modified
-	ModifiedAt string `json:"modified_at"`
+	// UpdatedAt is the timestamp in RFC3339 format of when the registrant was last updated
+	UpdatedAt string `json:"updated_at"`
 
 	// CreatedBy is the user that created the registrant
 	CreatedBy CreatedBy `json:"created_by"`
@@ -520,22 +518,16 @@ type registrantInput struct {
 
 // pastMeetingInput represents input data for past meeting records.
 type pastMeetingInput struct {
-	// ID is the partition key of the past meeting table
+	// UID is the partition key of the past meeting table
 	// This is a v2 attribute
-	ID string `json:"id"`
-
-	// MeetingAndOccurrenceID is the primary key of the past meeting table
-	// If the past meeting record is for a recurring meeting, then the value is the combination of the
-	// meeting ID and the occurrence ID (e.g. <meeting_id>:<occurrence_id>). Otherwise it is just the
-	// meeitng ID for a non-recurring meeting.
-	MeetingAndOccurrenceID string `json:"meeting_and_occurrence_id"`
+	UID string `json:"uid"`
 
 	// ProjectID is the ID of the salesforce (v1) project associated with the past meeting
 	ProjectSFID string `json:"proj_id"`
 
 	// ProjectID is the ID of the v2 project associated with the past meeting
 	// This is a v2 attribute
-	ProjectID string `json:"project_id"`
+	ProjectUID string `json:"project_uid"`
 
 	// ProjectSlug is the slug of the project associated with the past meeting
 	ProjectSlug string `json:"project_slug"`
@@ -557,8 +549,8 @@ type pastMeetingInput struct {
 	// Duration is the duration of the past meeting
 	Duration int `json:"-"`
 
-	// MeetingID is the ID of the meeting associated with the past meeting
-	MeetingID string `json:"meeting_id"`
+	// MeetingUID is the UID of the meeting associated with the past meeting
+	MeetingUID string `json:"meeting_uid"`
 
 	// OccurrenceID is the ID of the occurrence associated with the past meeting
 	OccurrenceID string `json:"occurrence_id"`
@@ -604,6 +596,9 @@ type pastMeetingInput struct {
 	// Visibility is the visibility of the past meeting
 	Visibility string `json:"visibility"`
 
+	// ArtifactVisibility is the visibility of the artifacts of the past meeting
+	ArtifactVisibility string `json:"artifact_visibility"`
+
 	// Recurrence is the recurrence of the past meeting
 	Recurrence *ZoomMeetingRecurrence `json:"recurrence"`
 
@@ -624,8 +619,8 @@ type pastMeetingInput struct {
 	// RequireAISummaryApproval is whether the meeting requires approval of the AI summary
 	RequireAISummaryApproval *bool `json:"require_ai_summary_approval,omitempty"`
 
-	// EarlyJoinTime is the number of minutes before the scheduled start time that participants can join the meeting
-	EarlyJoinTime int `json:"-"`
+	// EarlyJoinTimeMinutes is the number of minutes before the scheduled start time that participants can join the meeting
+	EarlyJoinTimeMinutes int `json:"-"`
 
 	// Artifacts is the list of artifacts for the past meeting
 	Artifacts []ZoomPastMeetingArtifact `json:"artifacts"`
@@ -633,11 +628,20 @@ type pastMeetingInput struct {
 	// YoutubeLink is the link to the YouTube video of the past meeting
 	YoutubeLink string `json:"youtube_link,omitempty"`
 
+	// Platform is the platform of the past meeting
+	Platform string `json:"platform"`
+
+	// PlatformMeetingID is the platform-specific meeting ID of the past meeting
+	PlatformMeetingID string `json:"platform_meeting_id,omitempty"`
+
+	// ZoomConfig is the configuration of the Zoom meeting
+	ZoomConfig *ZoomConfig `json:"zoom_config,omitempty"`
+
 	// CreatedAt is the creation time of the past meeting
 	CreatedAt string `json:"created_at"`
 
-	// ModifiedAt is the last modification time in RFC3339 format of the past meeting
-	ModifiedAt string `json:"modified_at"`
+	// UpdatedAt is the last modification time in RFC3339 format of the past meeting
+	UpdatedAt string `json:"updated_at"`
 
 	// CreatedBy is the user who created the past meeting
 	CreatedBy CreatedBy `json:"created_by"`
@@ -650,15 +654,15 @@ type pastMeetingInput struct {
 func (p pastMeetingInput) MarshalJSON() ([]byte, error) {
 	type Alias pastMeetingInput
 	return json.Marshal(&struct {
-		Duration      int `json:"duration"`
-		EarlyJoinTime int `json:"early_join_time"`
-		Type          int `json:"type"`
+		Duration             int `json:"duration"`
+		EarlyJoinTimeMinutes int `json:"early_join_time_minutes"`
+		Type                 int `json:"type"`
 		*Alias
 	}{
-		Duration:      p.Duration,
-		EarlyJoinTime: p.EarlyJoinTime,
-		Type:          p.Type,
-		Alias:         (*Alias)(&p),
+		Duration:             p.Duration,
+		EarlyJoinTimeMinutes: p.EarlyJoinTimeMinutes,
+		Type:                 p.Type,
+		Alias:                (*Alias)(&p),
 	})
 }
 
@@ -1010,16 +1014,16 @@ type ParticipantSession struct {
 
 // pastMeetingRecordingInput is the schema for a past meeting recording in DynamoDB.
 type pastMeetingRecordingInput struct {
-	// ID is the recording record ID in the v2 system.
-	// It is the same as the [MeetingAndOccurrenceID] field, but with the json tag to match what the v2 system expects.
-	ID string `json:"id"`
+	// UID is the recording record UID in the v2 system.
+	// It is the same as the [PastMeetingUID] field, but with the json tag to match what the v2 system expects.
+	UID string `json:"uid"`
 
-	// MeetingAndOccurrenceID is the ID of the meeting and occurrence associated with the recording.
+	// PastMeetingUID is the ID of the past meeting associated with the recording.
 	// This is the primary key of the recording table since there is only one recording record for a past meeting.
-	MeetingAndOccurrenceID string `json:"meeting_and_occurrence_id"`
+	PastMeetingUID string `json:"past_meeting_uid"`
 
-	// ProjectID is the ID of the project associated with the recording.
-	ProjectID string `json:"proj_id"`
+	// ProjectUID is the ID of the project associated with the recording.
+	ProjectUID string `json:"project_uid"`
 
 	// ProjectSlug is the slug of the project associated with the recording.
 	ProjectSlug string `json:"project_slug"`
@@ -1030,11 +1034,17 @@ type pastMeetingRecordingInput struct {
 	// HostID is the Zoom user ID of the host of the recorded meeting. This comes from Zoom.
 	HostID string `json:"host_id"`
 
-	// MeetingID is the ID of the meeting associated with the recording.
-	MeetingID string `json:"meeting_id"`
+	// MeetingUID is the UID of the meeting associated with the recording.
+	MeetingUID string `json:"meeting_uid"`
 
 	// OccurrenceID is the ID of the occurrence associated with the recording.
 	OccurrenceID string `json:"occurrence_id"`
+
+	// Platform name (e.g., "Zoom", etc.)
+	Platform string `json:"platform"`
+
+	// PlatformMeetingID is the platform-specific meeting ID.
+	PlatformMeetingID string `json:"platform_meeting_id"`
 
 	// RecordingAccess is the access type of the recording.
 	RecordingAccess string `json:"recording_access"`
@@ -1074,8 +1084,8 @@ type pastMeetingRecordingInput struct {
 	// CreatedAt is the creation time of the recording in RFC3339 format.
 	CreatedAt string `json:"created_at"`
 
-	// ModifiedAt is the last modification time of the recording in RFC3339 format.
-	ModifiedAt string `json:"modified_at"`
+	// UpdatedAt is the last modification time of the recording in RFC3339 format.
+	UpdatedAt string `json:"updated_at"`
 
 	// CreatedBy is the user who created the recording record in this system.
 	CreatedBy CreatedBy `json:"created_by"`

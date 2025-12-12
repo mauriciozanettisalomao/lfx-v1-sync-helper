@@ -165,8 +165,6 @@ func convertMapToInputMeeting(ctx context.Context, v1Data map[string]any) (*meet
 		return nil, fmt.Errorf("failed to unmarshal JSON into InputMeeting: %w", err)
 	}
 
-	logger.With("v1_data", v1Data, "meeting", meeting).InfoContext(ctx, "converted v1Data to InputMeeting")
-
 	// We need to populate the ID for the v2 system
 	if meetingID, ok := v1Data["meeting_id"].(string); ok && meetingID != "" {
 		meeting.UID = meetingID
@@ -200,12 +198,32 @@ func convertMapToInputMeeting(ctx context.Context, v1Data map[string]any) (*meet
 	}
 	if earlyJoinTimeStr, ok := v1Data["early_join_time"].(string); ok && earlyJoinTimeStr != "" {
 		if earlyJoinTime, err := strconv.Atoi(earlyJoinTimeStr); err == nil {
-			meeting.EarlyJoinTime = earlyJoinTime
+			meeting.EarlyJoinTimeMinutes = earlyJoinTime
 		}
 	}
 	if lastEndTimeStr, ok := v1Data["last_end_time"].(string); ok && lastEndTimeStr != "" {
 		if lastEndTime, err := strconv.ParseInt(lastEndTimeStr, 10, 64); err == nil {
 			meeting.LastEndTime = lastEndTime
+		}
+	}
+	if lastBulkRegistrantsJobFailedCountStr, ok := v1Data["last_bulk_registrants_job_failed_count"].(string); ok && lastBulkRegistrantsJobFailedCountStr != "" {
+		if lastBulkRegistrantsJobFailedCount, err := strconv.Atoi(lastBulkRegistrantsJobFailedCountStr); err == nil {
+			meeting.LastBulkRegistrantsJobFailedCount = lastBulkRegistrantsJobFailedCount
+		}
+	}
+	if lastBulkRegistrantsJobWarningCountStr, ok := v1Data["last_bulk_registrants_job_warning_count"].(string); ok && lastBulkRegistrantsJobWarningCountStr != "" {
+		if lastBulkRegistrantsJobWarningCount, err := strconv.Atoi(lastBulkRegistrantsJobWarningCountStr); err == nil {
+			meeting.LastBulkRegistrantsJobWarningCount = lastBulkRegistrantsJobWarningCount
+		}
+	}
+	if lastMailingListMembersSyncJobFailedCountStr, ok := v1Data["last_mailing_list_members_sync_job_failed_count"].(string); ok && lastMailingListMembersSyncJobFailedCountStr != "" {
+		if lastMailingListMembersSyncJobFailedCount, err := strconv.Atoi(lastMailingListMembersSyncJobFailedCountStr); err == nil {
+			meeting.LastMailingListMembersSyncJobFailedCount = lastMailingListMembersSyncJobFailedCount
+		}
+	}
+	if lastMailingListMembersSyncJobWarningCountStr, ok := v1Data["last_mailing_list_members_sync_job_warning_count"].(string); ok && lastMailingListMembersSyncJobWarningCountStr != "" {
+		if lastMailingListMembersSyncJobWarningCount, err := strconv.Atoi(lastMailingListMembersSyncJobWarningCountStr); err == nil {
+			meeting.LastMailingListMembersSyncJobWarningCount = lastMailingListMembersSyncJobWarningCount
 		}
 	}
 	// Use the recording access value to set the artifact visibility.
@@ -220,6 +238,7 @@ func convertMapToInputMeeting(ctx context.Context, v1Data map[string]any) (*meet
 	} else {
 		meeting.ArtifactVisibility = "meeting_hosts"
 	}
+	meeting.ZoomConfig = ZoomConfig{}
 	if meetingID, ok := v1Data["meeting_id"].(string); ok && meetingID != "" {
 		meeting.ZoomConfig.MeetingID = meetingID
 	}
@@ -347,7 +366,7 @@ func convertMapToInputMeeting(ctx context.Context, v1Data map[string]any) (*meet
 
 func getMeetingTags(meeting *meetingInput) []string {
 	tags := []string{
-		fmt.Sprintf("%s", meeting.UID),
+		meeting.UID,
 		fmt.Sprintf("meeting_uid:%s", meeting.UID),
 		fmt.Sprintf("project_uid:%s", meeting.ProjectUID),
 		fmt.Sprintf("title:%s", meeting.Title),
@@ -639,7 +658,27 @@ func convertMapToInputRegistrant(ctx context.Context, v1Data map[string]any) (*r
 	}
 
 	if registrantID, ok := v1Data["registrant_id"].(string); ok && registrantID != "" {
-		registrant.ID = registrantID
+		registrant.UID = registrantID
+	}
+
+	if meetingUID, ok := v1Data["meeting_id"].(string); ok && meetingUID != "" {
+		registrant.MeetingUID = meetingUID
+	}
+
+	if committeeUID, ok := v1Data["committee_id"].(string); ok && committeeUID != "" {
+		registrant.CommitteeUID = committeeUID
+	}
+
+	if orgName, ok := v1Data["org"].(string); ok && orgName != "" {
+		registrant.OrgName = orgName
+	}
+
+	if avatarURL, ok := v1Data["profile_picture"].(string); ok && avatarURL != "" {
+		registrant.AvatarURL = avatarURL
+	}
+
+	if modifiedAt, ok := v1Data["modified_at"].(string); ok && modifiedAt != "" {
+		registrant.UpdatedAt = modifiedAt
 	}
 
 	return &registrant, nil
@@ -656,10 +695,10 @@ type MeetingRegistrantAccessMessage struct {
 
 func getRegistrantTags(registrant *registrantInput) []string {
 	tags := []string{
-		fmt.Sprintf("%s", registrant.ID),
-		fmt.Sprintf("registrant_uid:%s", registrant.ID),
-		fmt.Sprintf("meeting_uid:%s", registrant.MeetingID),
-		fmt.Sprintf("committee_uid:%s", registrant.CommitteeID),
+		registrant.UID,
+		fmt.Sprintf("registrant_uid:%s", registrant.UID),
+		fmt.Sprintf("meeting_uid:%s", registrant.MeetingUID),
+		fmt.Sprintf("committee_uid:%s", registrant.CommitteeUID),
 		fmt.Sprintf("first_name:%s", registrant.FirstName),
 		fmt.Sprintf("last_name:%s", registrant.LastName),
 		fmt.Sprintf("email:%s", registrant.Email),
@@ -687,7 +726,7 @@ func handleZoomMeetingRegistrantUpdate(ctx context.Context, key string, v1Data m
 	}
 
 	// Extract the registrant ID
-	registrantID := registrant.ID
+	registrantID := registrant.UID
 	if registrantID == "" {
 		logger.With("key", key).ErrorContext(ctx, "missing or invalid id in v1 registrant data")
 		return
@@ -706,13 +745,13 @@ func handleZoomMeetingRegistrantUpdate(ctx context.Context, key string, v1Data m
 	}
 
 	// Check if parent meeting exists in mappings before proceeding.
-	if registrant.MeetingID == "" {
+	if registrant.MeetingUID == "" {
 		logger.With("registrant_id", registrantID).ErrorContext(ctx, "meeting registrant missing required parent meeting ID")
 		return
 	}
-	meetingMappingKey := fmt.Sprintf("v1_meetings.%s", registrant.MeetingID)
+	meetingMappingKey := fmt.Sprintf("v1_meetings.%s", registrant.MeetingUID)
 	if _, err := mappingsKV.Get(ctx, meetingMappingKey); err != nil {
-		logger.With("meeting_id", registrant.MeetingID, "registrant_id", registrantID).InfoContext(ctx, "skipping meeting registrant sync - parent meeting not found in mappings")
+		logger.With("meeting_id", registrant.MeetingUID, "registrant_id", registrantID).InfoContext(ctx, "skipping meeting registrant sync - parent meeting not found in mappings")
 		return
 	}
 
@@ -734,7 +773,7 @@ func handleZoomMeetingRegistrantUpdate(ctx context.Context, key string, v1Data m
 		authSub := mapUsernameToAuthSub(registrant.Username)
 		accessMsg := MeetingRegistrantAccessMessage{
 			ID:        registrantID,
-			MeetingID: registrant.MeetingID,
+			MeetingID: registrant.MeetingUID,
 			Username:  authSub,
 			Host:      *registrant.Host,
 		}
@@ -757,7 +796,7 @@ func handleZoomMeetingRegistrantUpdate(ctx context.Context, key string, v1Data m
 		}
 	}
 
-	logger.With("id", registrantID, "meeting_id", registrant.MeetingID, "key", key).InfoContext(ctx, "successfully sent registrant indexer and put messages")
+	logger.With("id", registrantID, "meeting_id", registrant.MeetingUID, "key", key).InfoContext(ctx, "successfully sent registrant indexer and put messages")
 }
 
 // PastMeetingAccessMessage is the schema for the data in the message sent to the fga-sync service.
@@ -789,7 +828,12 @@ func convertMapToInputPastMeeting(ctx context.Context, v1Data map[string]any) (*
 
 	// We need to populate the ID for the v2 system
 	if meetingAndOccurrenceID, ok := v1Data["meeting_and_occurrence_id"].(string); ok && meetingAndOccurrenceID != "" {
-		pastMeeting.ID = meetingAndOccurrenceID
+		pastMeeting.UID = meetingAndOccurrenceID
+	}
+
+	if meetingUID, ok := v1Data["meeting_id"].(string); ok && meetingUID != "" {
+		pastMeeting.MeetingUID = meetingUID
+		pastMeeting.PlatformMeetingID = meetingUID
 	}
 
 	// Convert the v1 project ID since the json key is different,
@@ -801,7 +845,15 @@ func convertMapToInputPastMeeting(ctx context.Context, v1Data map[string]any) (*
 	// Take the v1 project salesforce ID and look up the v2 project UID.
 	projectMappingKey := fmt.Sprintf("project.sfid.%s", pastMeeting.ProjectSFID)
 	if entry, err := mappingsKV.Get(ctx, projectMappingKey); err == nil {
-		pastMeeting.ProjectID = string(entry.Value())
+		pastMeeting.ProjectUID = string(entry.Value())
+	}
+
+	// Convert v1 named fields to v2 named fields.
+	if title, ok := v1Data["topic"].(string); ok && title != "" {
+		pastMeeting.Title = title
+	}
+	if description, ok := v1Data["agenda"].(string); ok && description != "" {
+		pastMeeting.Description = description
 	}
 
 	// Convert duration from string to int
@@ -814,7 +866,7 @@ func convertMapToInputPastMeeting(ctx context.Context, v1Data map[string]any) (*
 	// Convert early join time from string to int
 	if earlyJoinTimeStr, ok := v1Data["early_join_time"].(string); ok && earlyJoinTimeStr != "" {
 		if earlyJoinTime, err := strconv.Atoi(earlyJoinTimeStr); err == nil {
-			pastMeeting.EarlyJoinTime = earlyJoinTime
+			pastMeeting.EarlyJoinTimeMinutes = earlyJoinTime
 		}
 	}
 
@@ -825,8 +877,25 @@ func convertMapToInputPastMeeting(ctx context.Context, v1Data map[string]any) (*
 		}
 	}
 
+	pastMeeting.ZoomConfig = &ZoomConfig{}
+	if meetingID, ok := v1Data["meeting_id"].(string); ok && meetingID != "" {
+		pastMeeting.ZoomConfig.MeetingID = meetingID
+	}
+	if passcode, ok := v1Data["passcode"].(string); ok && passcode != "" {
+		pastMeeting.ZoomConfig.Passcode = passcode
+	}
+	if aiCompanionEnabled, ok := v1Data["zoom_ai_enabled"].(bool); ok {
+		pastMeeting.ZoomConfig.AICompanionEnabled = aiCompanionEnabled
+	}
+	if aiSummaryRequireApproval, ok := v1Data["ai_summary_require_approval"].(bool); ok {
+		pastMeeting.ZoomConfig.AISummaryRequireApproval = aiSummaryRequireApproval
+	}
+
 	// Convert recurrence integer fields from strings
-	if recurrenceData, ok := v1Data["recurrence"].(map[string]any); ok && pastMeeting.Recurrence != nil {
+	if recurrenceData, ok := v1Data["recurrence"].(map[string]any); ok {
+		if pastMeeting.Recurrence == nil {
+			pastMeeting.Recurrence = &ZoomMeetingRecurrence{}
+		}
 		if typeStr, ok := recurrenceData["type"].(string); ok && typeStr != "" {
 			if recType, err := strconv.Atoi(typeStr); err == nil {
 				pastMeeting.Recurrence.Type = recType
@@ -859,15 +928,32 @@ func convertMapToInputPastMeeting(ctx context.Context, v1Data map[string]any) (*
 		}
 	}
 
+	// Use the recording access value to set the artifact visibility.
+	// Otherwise, fallback to the transcript or summary access values.
+	// And as a last resort, fallback to the default value of "meeting_hosts".
+	if recordingAccess, ok := v1Data["recording_access"].(string); ok && recordingAccess != "" {
+		pastMeeting.ArtifactVisibility = recordingAccess
+	} else if transcriptAccess, ok := v1Data["transcript_access"].(string); ok && transcriptAccess != "" {
+		pastMeeting.ArtifactVisibility = transcriptAccess
+	} else if summaryAccess, ok := v1Data["ai_summary_access"].(string); ok && summaryAccess != "" {
+		pastMeeting.ArtifactVisibility = summaryAccess
+	} else {
+		pastMeeting.ArtifactVisibility = "meeting_hosts"
+	}
+
+	if modifiedAt, ok := v1Data["modified_at"].(string); ok && modifiedAt != "" {
+		pastMeeting.UpdatedAt = modifiedAt
+	}
+
 	return &pastMeeting, nil
 }
 
 func getPastMeetingTags(pastMeeting *pastMeetingInput) []string {
 	tags := []string{
-		fmt.Sprintf("%s", pastMeeting.MeetingAndOccurrenceID),
-		fmt.Sprintf("past_meeting_uid:%s", pastMeeting.MeetingAndOccurrenceID),
-		fmt.Sprintf("meeting_uid:%s", pastMeeting.MeetingID),
-		fmt.Sprintf("project_uid:%s", pastMeeting.ProjectID),
+		pastMeeting.UID,
+		fmt.Sprintf("past_meeting_uid:%s", pastMeeting.UID),
+		fmt.Sprintf("meeting_uid:%s", pastMeeting.MeetingUID),
+		fmt.Sprintf("project_uid:%s", pastMeeting.ProjectUID),
 		fmt.Sprintf("occurrence_id:%s", pastMeeting.OccurrenceID),
 		fmt.Sprintf("title:%s", pastMeeting.Title),
 	}
@@ -894,20 +980,20 @@ func handleZoomPastMeetingUpdate(ctx context.Context, key string, v1Data map[str
 	}
 
 	// Extract the past meeting UID (MeetingAndOccurrenceID)
-	uid := pastMeeting.MeetingAndOccurrenceID
+	uid := pastMeeting.UID
 	if uid == "" {
 		logger.With("key", key).ErrorContext(ctx, "missing or invalid meeting_and_occurrence_id in v1 past meeting data")
 		return
 	}
 
 	// Check if parent meeting exists in mappings before proceeding.
-	if pastMeeting.MeetingID == "" {
+	if pastMeeting.MeetingUID == "" {
 		logger.With("past_meeting_id", uid).ErrorContext(ctx, "past meeting missing required parent meeting ID")
 		return
 	}
-	meetingMappingKey := fmt.Sprintf("v1_meetings.%s", pastMeeting.MeetingID)
+	meetingMappingKey := fmt.Sprintf("v1_meetings.%s", pastMeeting.MeetingUID)
 	if _, err := mappingsKV.Get(ctx, meetingMappingKey); err != nil {
-		logger.With("meeting_id", pastMeeting.MeetingID, "past_meeting_id", uid).InfoContext(ctx, "skipping past meeting sync - parent meeting not found in mappings")
+		logger.With("meeting_id", pastMeeting.MeetingUID, "past_meeting_id", uid).InfoContext(ctx, "skipping past meeting sync - parent meeting not found in mappings")
 		return
 	}
 
@@ -954,9 +1040,9 @@ func handleZoomPastMeetingUpdate(ctx context.Context, key string, v1Data map[str
 
 	accessMsg := PastMeetingAccessMessage{
 		UID:        uid,
-		MeetingUID: pastMeeting.MeetingID,
+		MeetingUID: pastMeeting.MeetingUID,
 		Public:     pastMeeting.Visibility == "public",
-		ProjectUID: pastMeeting.ProjectID,
+		ProjectUID: pastMeeting.ProjectUID,
 		Committees: committees,
 	}
 
@@ -977,7 +1063,7 @@ func handleZoomPastMeetingUpdate(ctx context.Context, key string, v1Data map[str
 		}
 	}
 
-	logger.With("uid", uid, "meeting_id", pastMeeting.MeetingID, "key", key).InfoContext(ctx, "successfully sent past meeting indexer and access messages")
+	logger.With("uid", uid, "meeting_id", pastMeeting.MeetingUID, "key", key).InfoContext(ctx, "successfully sent past meeting indexer and access messages")
 }
 
 // convertMapToInputPastMeetingMapping converts a map[string]any to a ZoomPastMeetingMappingDB struct.
@@ -1085,9 +1171,9 @@ func handleZoomPastMeetingMappingUpdate(ctx context.Context, key string, v1Data 
 		// Send past meeting access message with updated committees
 		accessMsg := PastMeetingAccessMessage{
 			UID:        meetingAndOccurrenceID,
-			MeetingUID: pastMeeting.MeetingID,
+			MeetingUID: pastMeeting.MeetingUID,
 			Public:     pastMeeting.Visibility == "public",
-			ProjectUID: pastMeeting.ProjectID,
+			ProjectUID: pastMeeting.ProjectUID,
 			Committees: committees,
 		}
 
@@ -1292,10 +1378,8 @@ func handleZoomPastMeetingInviteeUpdate(ctx context.Context, key string, v1Data 
 		}
 	}
 
-	if inviteeID != "" {
-		if _, err := mappingsKV.Put(ctx, mappingKey, []byte("1")); err != nil {
-			logger.With(errKey, err, "id", inviteeID).WarnContext(ctx, "failed to store past meeting invitee mapping")
-		}
+	if _, err := mappingsKV.Put(ctx, mappingKey, []byte("1")); err != nil {
+		logger.With(errKey, err, "id", inviteeID).WarnContext(ctx, "failed to store past meeting invitee mapping")
 	}
 
 	logger.With("id", inviteeID, "meeting_and_occurrence_id", invitee.MeetingAndOccurrenceID, "key", key).InfoContext(ctx, "successfully sent invitee indexer and access messages")
@@ -1636,9 +1720,22 @@ func convertMapToInputPastMeetingRecording(ctx context.Context, v1Data map[strin
 		return nil, fmt.Errorf("failed to unmarshal JSON into PastMeetingRecordingInput: %w", err)
 	}
 
+	recording.Platform = "Zoom"
+
 	// Populate the ID for the v2 system with the partition key from v1.
 	if meetingAndOccurrenceID, ok := v1Data["meeting_and_occurrence_id"].(string); ok && meetingAndOccurrenceID != "" {
-		recording.ID = meetingAndOccurrenceID
+		recording.UID = meetingAndOccurrenceID
+		recording.PastMeetingUID = meetingAndOccurrenceID
+	}
+
+	if meetingUID, ok := v1Data["meeting_id"].(string); ok && meetingUID != "" {
+		recording.MeetingUID = meetingUID
+		recording.PlatformMeetingID = meetingUID
+	}
+
+	// Convert v1 named fields to v2 named fields.
+	if title, ok := v1Data["topic"].(string); ok && title != "" {
+		recording.Title = title
 	}
 
 	// We should set a default recording access if it is not set, to ensure it can have its access relationships
@@ -1680,7 +1777,7 @@ func convertMapToInputPastMeetingRecording(ctx context.Context, v1Data map[strin
 	}
 
 	// Convert integer fields in RecordingSessions (if they exist)
-	if sessionsData, ok := v1Data["recording_sessions"].([]any); ok {
+	if sessionsData, ok := v1Data["sessions"].([]any); ok {
 		for i, sessionData := range sessionsData {
 			if sessionMap, ok := sessionData.(map[string]any); ok {
 				if i < len(recording.Sessions) {
@@ -1711,16 +1808,20 @@ func convertMapToInputPastMeetingRecording(ctx context.Context, v1Data map[strin
 		}
 	}
 
+	if modifiedAt, ok := v1Data["modified_at"].(string); ok && modifiedAt != "" {
+		recording.UpdatedAt = modifiedAt
+	}
+
 	return &recording, nil
 }
 
 func getPastMeetingRecordingTags(recording *pastMeetingRecordingInput) []string {
 	tags := []string{
-		fmt.Sprintf("%s", recording.MeetingAndOccurrenceID),
-		fmt.Sprintf("past_meeting_recording_uid:%s", recording.MeetingAndOccurrenceID),
-		fmt.Sprintf("past_meeting_uid:%s", recording.MeetingAndOccurrenceID),
+		fmt.Sprintf("%s", recording.UID),
+		fmt.Sprintf("past_meeting_recording_uid:%s", recording.UID),
+		fmt.Sprintf("past_meeting_uid:%s", recording.PastMeetingUID),
 		"platform:Zoom",
-		fmt.Sprintf("platform_meeting_id:%s", recording.MeetingID),
+		fmt.Sprintf("platform_meeting_id:%s", recording.MeetingUID),
 	}
 	for _, session := range recording.Sessions {
 		tags = append(tags, fmt.Sprintf("platform_meeting_instance_id:%s", session.UUID))
@@ -1733,11 +1834,11 @@ func getPastMeetingRecordingTags(recording *pastMeetingRecordingInput) []string 
 // Ultimately they are indexed as separate records, so they need their own tags.
 func getPastMeetingTranscriptTags(recording *pastMeetingRecordingInput) []string {
 	tags := []string{
-		fmt.Sprintf("%s", recording.MeetingAndOccurrenceID),
-		fmt.Sprintf("past_meeting_transcript_uid:%s", recording.MeetingAndOccurrenceID),
-		fmt.Sprintf("past_meeting_uid:%s", recording.MeetingAndOccurrenceID),
+		fmt.Sprintf("%s", recording.UID),
+		fmt.Sprintf("past_meeting_transcript_uid:%s", recording.UID),
+		fmt.Sprintf("past_meeting_uid:%s", recording.PastMeetingUID),
 		"platform:Zoom",
-		fmt.Sprintf("platform_meeting_id:%s", recording.MeetingID),
+		fmt.Sprintf("platform_meeting_id:%s", recording.MeetingUID),
 	}
 	for _, session := range recording.Sessions {
 		tags = append(tags, fmt.Sprintf("platform_meeting_instance_id:%s", session.UUID))
@@ -1763,7 +1864,7 @@ func handleZoomPastMeetingRecordingUpdate(ctx context.Context, key string, v1Dat
 	}
 
 	// Extract the UID (MeetingAndOccurrenceID)
-	uid := recordingInput.MeetingAndOccurrenceID
+	uid := recordingInput.UID
 	if uid == "" {
 		logger.With("key", key).ErrorContext(ctx, "missing meeting_and_occurrence_id in past meeting recording data")
 		return
@@ -1874,14 +1975,13 @@ func convertMapToInputPastMeetingSummary(ctx context.Context, v1Data map[string]
 		return nil, fmt.Errorf("failed to unmarshal JSON into PastMeetingSummaryInput: %w", err)
 	}
 
-	logger.With(errKey, err, "v1_data", v1Data, "summary", summary).InfoContext(ctx, "converted v1Data to PastMeetingSummaryInput")
-
 	if summaryID, ok := v1Data["id"].(string); ok && summaryID != "" {
 		summary.UID = summaryID
 	}
 	if pastMeetingUID, ok := v1Data["meeting_and_occurrence_id"].(string); ok && pastMeetingUID != "" {
 		summary.PastMeetingUID = pastMeetingUID
 	}
+	summary.ZoomConfig = PastMeetingSummaryZoomConfig{}
 	if meetingID, ok := v1Data["meeting_id"].(string); ok && meetingID != "" {
 		summary.MeetingUID = meetingID
 		summary.ZoomConfig.MeetingID = meetingID
@@ -1894,18 +1994,19 @@ func convertMapToInputPastMeetingSummary(ctx context.Context, v1Data map[string]
 	// Construct the content (one field) for the v2 data from the different sparse fields in the v1 data.
 	summaryContent := ""
 	if summary.SummaryOverview != "" {
-		summaryContent += fmt.Sprintf("## Overview\n%s", summary.SummaryOverview)
+		summaryContent += fmt.Sprintf("## Overview\n%s\n\n", summary.SummaryOverview)
 	}
 	if len(summary.SummaryDetails) > 0 {
 		summaryContent += "## Key Topics\n"
 		for _, detail := range summary.SummaryDetails {
 			summaryContent += fmt.Sprintf("### %s\n%s", detail.Label, detail.Summary)
 		}
+		summaryContent += "\n\n"
 	}
 	if len(summary.NextSteps) > 0 {
 		summaryContent += "## Next Steps\n"
 		for _, nextStep := range summary.NextSteps {
-			summaryContent += fmt.Sprintf("- %s", nextStep)
+			summaryContent += fmt.Sprintf("- %s\n", nextStep)
 		}
 	}
 	summary.Content = summaryContent
@@ -1913,18 +2014,19 @@ func convertMapToInputPastMeetingSummary(ctx context.Context, v1Data map[string]
 	// Edited summary content
 	editedSummaryContent := ""
 	if summary.EditedSummaryOverview != "" {
-		editedSummaryContent += fmt.Sprintf("## Overview\n%s", summary.EditedSummaryOverview)
+		editedSummaryContent += fmt.Sprintf("## Overview\n%s\n\n", summary.EditedSummaryOverview)
 	}
 	if len(summary.EditedSummaryDetails) > 0 {
 		editedSummaryContent += "## Key Topics\n"
 		for _, detail := range summary.EditedSummaryDetails {
 			editedSummaryContent += fmt.Sprintf("### %s\n%s", detail.Label, detail.Summary)
 		}
+		editedSummaryContent += "\n\n"
 	}
 	if len(summary.EditedNextSteps) > 0 {
 		editedSummaryContent += "## Next Steps\n"
 		for _, nextStep := range summary.EditedNextSteps {
-			editedSummaryContent += fmt.Sprintf("- %s", nextStep)
+			editedSummaryContent += fmt.Sprintf("- %s\n", nextStep)
 		}
 	}
 	summary.EditedContent = editedSummaryContent
