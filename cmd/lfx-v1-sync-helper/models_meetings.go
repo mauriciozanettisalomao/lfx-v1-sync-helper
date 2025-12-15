@@ -454,6 +454,95 @@ type registrantInput struct {
 	UpdatedBy UpdatedBy `json:"updated_by" dynamodbav:"updated_by"`
 }
 
+// RSVPResponseType represents the type of RSVP response
+type RSVPResponseType string
+
+const (
+	// RSVPResponseAccepted indicates the registrant will attend
+	RSVPResponseAccepted RSVPResponseType = "accepted"
+	// RSVPResponseMaybe indicates the registrant might attend
+	RSVPResponseMaybe RSVPResponseType = "maybe"
+	// RSVPResponseDeclined indicates the registrant will not attend
+	RSVPResponseDeclined RSVPResponseType = "declined"
+)
+
+// RSVPScope represents the scope of an RSVP response
+type RSVPScope string
+
+const (
+	// RSVPScopeSingle indicates the RSVP applies to a single occurrence
+	RSVPScopeSingle RSVPScope = "single"
+	// RSVPScopeAll indicates the RSVP applies to all occurrences in the series
+	RSVPScopeAll RSVPScope = "all"
+	// RSVPScopeThisAndFollowing indicates the RSVP applies to a specific occurrence and all following ones
+	RSVPScopeThisAndFollowing RSVPScope = "this_and_following"
+)
+
+type inviteResponseInput struct {
+	// ID is the partition key of the invite response (it is a UUID)
+	ID string `json:"id" dynamodbav:"id"`
+
+	// MeetingAndOccurrenceID is the ID of the combined meeting and occurrence associated with the invite response
+	MeetingAndOccurrenceID string `json:"meeting_and_occurrence_id" dynamodbav:"meeting_and_occurrence_id"`
+
+	// MeetingID is the ID of the meeting that the invite response is associated with.
+	// It is a Global Secondary Index on the invite response table.
+	MeetingID string `json:"meeting_id" dynamodbav:"meeting_id"`
+
+	// OccurrenceID is the ID of the occurrence that the invite response is associated with.
+	OccurrenceID string `json:"occurrence_id" dynamodbav:"occurrence_id"`
+
+	// RegistrantID is the ID of the registrant that the invite response is associated with.
+	// It is a Global Secondary Index on the invite response table.
+	RegistrantID string `json:"registrant_id" dynamodbav:"registrant_id"`
+
+	// Email is the email of the registrant that the invite response is associated with.
+	// It is a Global Secondary Index on the invite response table.
+	Email string `json:"email" dynamodbav:"email"`
+
+	// Name is the name of the registrant that the invite response is associated with.
+	Name string `json:"name" dynamodbav:"name"`
+
+	// UserID is the ID of the user that the invite response is associated with.
+	UserID string `json:"user_id" dynamodbav:"user_id"`
+
+	// Username is the LF username of the registrant that the invite response is associated with.
+	// This is a v2 only attribute, meaning the username is for an LF user in the v2 system.
+	Username string `json:"username"`
+
+	// Org is the organization of the registrant that the invite response is associated with.
+	Org string `json:"org" dynamodbav:"org"`
+
+	// JobTitle is the job title of the registrant that the invite response is associated with.
+	JobTitle string `json:"job_title" dynamodbav:"job_title"`
+
+	// Response is the response of the registrant that the invite response is associated with.
+	// It is a Global Secondary Index on the invite response table.
+	Response RSVPResponseType `json:"response" dynamodbav:"response"`
+
+	// Scope is the scope of the response (single/all/this_and_following)
+	// This is only a v2 attribute.
+	Scope RSVPScope `json:"scope"`
+
+	// ResponseDate is the date of the invite response from the registrant.
+	ResponseDate string `json:"response_date" dynamodbav:"response_date"`
+
+	// SESMessageID is the SES message ID of the invite response.
+	SESMessageID string `json:"ses_message_id" dynamodbav:"ses_message_id"`
+
+	// EmailSubject is the subject of the invite response email.
+	EmailSubject string `json:"email_subject" dynamodbav:"email_subject"`
+
+	// EmailText is the text of the invite response email.
+	EmailText string `json:"email_text" dynamodbav:"email_text"`
+
+	// CreatedAt is the timestamp in RFC3339 format of when the invite response was created.
+	CreatedAt string `json:"created_at" dynamodbav:"created_at"`
+
+	// ModifiedAt is the timestamp in RFC3339 format of when the invite response was last modified.
+	ModifiedAt string `json:"modified_at" dynamodbav:"modified_at"`
+}
+
 // pastMeetingInput represents input data for past meeting records.
 type pastMeetingInput struct {
 	// ID is the partition key of the past meeting table
