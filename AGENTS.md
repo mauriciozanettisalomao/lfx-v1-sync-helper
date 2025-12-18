@@ -13,7 +13,7 @@ The LFX v1 Sync Helper enables data synchronization between LFX v1 and LFX One (
 ## Architecture Overview
 
 ### Data Flows
-```
+```text
 LFX v1 Sources → Meltano → NATS KV → v1-sync-helper → LFX One APIs
 ```
 
@@ -25,7 +25,7 @@ LFX v1 Sources → Meltano → NATS KV → v1-sync-helper → LFX One APIs
 
 ## Repository Structure
 
-```
+```text
 lfx-v1-sync-helper/
 ├── meltano/                   # Python ETL pipeline
 │   ├── meltano.yml            # Main Meltano configuration
@@ -69,18 +69,18 @@ lfx-v1-sync-helper/
 
 ### Container Build Targets
 
-| Target | Description |
-|--------|-------------|
-| `all` | Complete build pipeline (clean, deps, fmt, lint, build) |
-| `build` | Compile optimized Go binary |
-| `debug` | Build with debug symbols and race detection |
-| `clean` | Clean build artifacts |
-| `check` | Run formatting, vetting, and linting |
-| `docker-build-v1-sync-helper` | Build Go service container |
-| `docker-build-meltano` | Build Python ETL container |
-| `docker-build-all` | Build both containers |
-| `docker-run-v1-sync-helper` | Run Go service container (requires .env) |
-| `docker-run-meltano` | Run Meltano container (shows dragon) |
+| Target                        | Description                                             |
+|-------------------------------|---------------------------------------------------------|
+| `all`                         | Complete build pipeline (clean, deps, fmt, lint, build) |
+| `build`                       | Compile optimized Go binary                             |
+| `debug`                       | Build with debug symbols and race detection             |
+| `clean`                       | Clean build artifacts                                   |
+| `check`                       | Run formatting, vetting, and linting                    |
+| `docker-build-v1-sync-helper` | Build Go service container                              |
+| `docker-build-meltano`        | Build Python ETL container                              |
+| `docker-build-all`            | Build both containers                                   |
+| `docker-run-v1-sync-helper`   | Run Go service container (requires .env)                |
+| `docker-run-meltano`          | Run Meltano container (shows dragon)                    |
 
 ### Container Configuration
 
