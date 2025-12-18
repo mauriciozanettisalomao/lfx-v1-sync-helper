@@ -69,6 +69,7 @@ plugins:
       - itx-zoom-past-meetings-recordings
       - itx-zoom-past-meetings-summaries
       - itx-zoom-meetings-registrants-v2
+      - itx-zoom-meetings-invite-responses-v2
       metadata:
         '*':
           # Setting the replication key allows conditional loads for
