@@ -180,8 +180,8 @@ for tap_name in "${TAPS[@]}"; do
 		exit 1
 	fi
 
-	# Compact the JSON to save space.
-	catalog_json=$(echo "$catalog_json" | jq -c .)
+	# Filter out unselected streams and compact the JSON to save space.
+	catalog_json=$(echo "$catalog_json" | jq -c '.streams |= map(select(.selected == true))')
 
 	# Generate ConfigMap YAML.
 	configmap_yaml=$(generate_configmap_yaml "${tap_name}" "${catalog_json}")
