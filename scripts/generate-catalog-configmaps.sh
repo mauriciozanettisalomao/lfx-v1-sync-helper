@@ -123,18 +123,28 @@ run_meltano_catalog() {
 	uv run meltano invoke --dump=catalog "${tap_name}" 2>"${stderr_file}"
 }
 
-# Function to generate ConfigMap data entry for a tap.
-generate_configmap_data_entry() {
+# Function to generate complete ConfigMap YAML for a tap.
+generate_configmap_yaml() {
 	local tap_name="$1"
 	local catalog_json="$2"
 
-	# Sanitize tap name for use as ConfigMap key.
-	local key_name="${tap_name//_/-}"
-	key_name=$(echo "${key_name}" | tr '[:upper:]' '[:lower:]')
+	# Sanitize tap name for use as ConfigMap name.
+	local configmap_name="${tap_name//_/-}"
+	configmap_name=$(echo "${configmap_name}" | tr '[:upper:]' '[:lower:]')
 
-	# For YAML literal block scalar (|), we don't need to escape quotes.
-	echo "  ${key_name}-catalog.json: |"
-	echo "    ${catalog_json}"
+	cat <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ${configmap_name}-catalog
+  labels:
+    app.kubernetes.io/name: lfx-v1-sync-helper
+    app.kubernetes.io/component: meltano
+    lfx.linuxfoundation.org/tap: ${tap_name}
+data:
+  catalog.json: |
+    ${catalog_json}
+EOF
 }
 
 # Main processing.
@@ -146,7 +156,7 @@ if [[ -n "${OUTPUT_FILE}" ]]; then
 	echo "Output: ${OUTPUT_FILE}" >&2
 fi
 
-CONFIGMAP_DATA_ENTRIES=()
+CONFIGMAPS=()
 
 for tap_name in "${TAPS[@]}"; do
 	# Create temporary file for stderr capture.
@@ -173,25 +183,20 @@ for tap_name in "${TAPS[@]}"; do
 	# Compact the JSON to save space.
 	catalog_json=$(echo "$catalog_json" | jq -c .)
 
-	# Generate ConfigMap data entry.
-	data_entry=$(generate_configmap_data_entry "${tap_name}" "${catalog_json}")
-	CONFIGMAP_DATA_ENTRIES+=("${data_entry}")
+	# Generate ConfigMap YAML.
+	configmap_yaml=$(generate_configmap_yaml "${tap_name}" "${catalog_json}")
+	CONFIGMAPS+=("${configmap_yaml}")
 done
 
-# Generate single ConfigMap with all tap catalogs.
-output_content="apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: meltano-catalogs
-  labels:
-    app.kubernetes.io/name: lfx-v1-sync-helper
-    app.kubernetes.io/component: meltano
-data:"
-
-# Add all data entries.
-for data_entry in "${CONFIGMAP_DATA_ENTRIES[@]}"; do
-	output_content="${output_content}
-${data_entry}"
+# Combine all ConfigMaps with YAML document separators.
+output_content=""
+for i in "${!CONFIGMAPS[@]}"; do
+	if [[ $i -gt 0 ]]; then
+		output_content="${output_content}
+---
+"
+	fi
+	output_content="${output_content}${CONFIGMAPS[$i]}"
 done
 
 # Output result.
