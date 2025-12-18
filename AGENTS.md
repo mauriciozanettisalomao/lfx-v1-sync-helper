@@ -138,15 +138,23 @@ lfx-v1-sync-helper/
 
 ### GitHub Actions Workflows
 
-1. **ko-build-main.yaml**: Builds on main branch push
-   - Uses `ko` for efficient Go builds
-   - Multi-architecture support
+1. **publish-main.yaml**: Builds on main branch push
+   - Uses `ko` for efficient Go v1-sync-helper builds
+   - Multi-architecture support (linux/amd64, linux/arm64)
    - SBOM generation
+   - Tags: `{commit-sha}`, `development`
 
-2. **ko-build-tag.yaml**: Tagged release builds
-   - Container and Helm chart publishing
+2. **publish-release.yaml**: Tagged release builds
+   - **publish-v1-sync-helper**: Go service build using ko
+   - **publish-meltano**: Python/Meltano Docker build (depends on v1-sync-helper)
+   - **release-helm-chart**: Helm chart publishing (depends on both containers)
+   - **create-ghcr-helm-provenance**: SLSA provenance for Helm chart
+   - **create-meltano-provenance**: SLSA provenance for Meltano container
+   - Multi-architecture support for v1-sync-helper (linux/amd64, linux/arm64)
+   - Single architecture for Meltano (linux/amd64)
    - Artifact signing with Cosign
-   - SLSA provenance generation
+   - Complete SLSA provenance generation
+   - Sequential execution: v1-sync-helper → meltano → helm-chart
 
 3. **mega-linter.yml**: Code quality enforcement
    - Cupcake flavor (Go + Python)
