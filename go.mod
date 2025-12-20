@@ -14,6 +14,7 @@ require (
 	github.com/nats-io/nats.go v1.47.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/teambition/rrule-go v1.8.2
+	github.com/vmihailenco/msgpack/v5 v5.4.1
 	goa.design/goa/v3 v3.23.2
 	golang.org/x/oauth2 v0.33.0
 )
@@ -36,6 +37,7 @@ require (
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
+	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	go.devnw.com/structs v1.0.0 // indirect
 	golang.org/x/crypto v0.45.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect

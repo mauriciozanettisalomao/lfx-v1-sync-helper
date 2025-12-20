@@ -81,6 +81,8 @@ spec:
             - name: TARGET_NATS_KV_VALIDATE_RECORDS
               # (true for PostgreSQL; false for DynamoDB)
               value: "true"
+            - name: TARGET_NATS_KV_MSGPACK
+              value: "true"
           resources:
             requests:
               memory: "512Mi"

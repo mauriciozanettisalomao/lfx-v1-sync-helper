@@ -1,0 +1,8 @@
+{
+  "url": "nats://lfx-platform-nats.lfx.svc.cluster.local:4222",
+  "bucket": "v1-objects",
+  "msgpack": false,
+  "key_prefix": "",
+  "refresh_mode": "newer",
+  "validate_records": true
+}
