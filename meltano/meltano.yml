@@ -121,6 +121,9 @@ plugins:
     - name: user
     - name: password
       sensitive: true
+    - name: msgpack
+      kind: boolean
+      value: false
     - name: creds
       kind: file
     - name: key_prefix

@@ -12,6 +12,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import jsonschema
+import msgpack
 import nats
 import simplejson as json
 import singer
@@ -54,6 +55,7 @@ async def persist_messages(
     key_prefix: str,
     refresh_mode: str,
     validate_records: bool = True,
+    use_msgpack: bool = False,
 ) -> dict | None:
     """
     Process Singer messages.
@@ -61,6 +63,9 @@ async def persist_messages(
     Singer messages are read from stdin. Schema-validated records are published to
     a NATS JetStream key/value bucket. State messages are captured and returned
     to the sender.
+
+    Args:
+        use_msgpack: If True, encode values as msgpack instead of JSON.
     """
     state = None
     schemas: dict[str, dict] = {}
@@ -175,13 +180,18 @@ async def persist_messages(
                             primary_key_value,
                         )
                         continue
-                    current_value = current.value.decode("utf-8")
-
-                    # Parse the current record.
-                    current_record = json.loads(current_value)
+                    # Always try both formats when parsing existing data since
+                    # we don't know what format was used when the data was
+                    # originally stored.
+                    try:
+                        current_record = msgpack.unpackb(current.value, raw=False)
+                    except (msgpack.exceptions.ExtraData, ValueError):
+                        # Fallback to JSON if msgpack fails.
+                        current_value = current.value.decode("utf-8")
+                        current_record = json.loads(current_value)
 
                     # Check if the record was deleted.
-                    if "_sdc_deleted_at" in current_value:
+                    if "_sdc_deleted_at" in current_record:
                         logger.warning(
                             (
                                 "Skipping record for stream %s with key %s due to "
@@ -235,9 +245,13 @@ async def persist_messages(
 
                     if should_update:
                         # Update with revision
+                        if use_msgpack:
+                            value = msgpack.packb(o.record)
+                        else:
+                            value = json.dumps(o.record).encode("utf-8")
                         await kv_client.update(
                             key=key,
-                            value=json.dumps(o.record).encode("utf-8"),
+                            value=value,
                             last=current.revision,
                         )
                         continue
@@ -254,16 +268,24 @@ async def persist_messages(
 
                 except nats.js.errors.KeyNotFoundError:
                     # Key doesn't exist, create it.
+                    if use_msgpack:
+                        value = msgpack.packb(o.record)
+                    else:
+                        value = json.dumps(o.record).encode("utf-8")
                     await kv_client.create(
                         key=key,
-                        value=json.dumps(o.record).encode("utf-8"),
+                        value=value,
                     )
             else:
                 # User has requested "full" sync, so use "put" without
                 # data checks.
+                if use_msgpack:
+                    value = msgpack.packb(o.record)
+                else:
+                    value = json.dumps(o.record).encode("utf-8")
                 await kv_client.put(
                     key=key,
-                    value=json.dumps(o.record).encode("utf-8"),
+                    value=value,
                 )
 
             state = None
@@ -302,6 +324,7 @@ async def run(config: dict) -> dict | None:
     key_prefix = config.get("key_prefix", "")
     refresh_mode = config.get("refresh_mode", "")
     validate_records = config.get("validate_records", True)
+    use_msgpack = config.get("msgpack", False)
     if user_credentials is not None:
         user_credentials = Path(user_credentials)
 
@@ -323,6 +346,7 @@ async def run(config: dict) -> dict | None:
         key_prefix,
         refresh_mode,
         validate_records,
+        use_msgpack,
     )
     return state
 

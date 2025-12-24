@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 // shouldSkipSync checks if the record was last modified by this service and
@@ -51,11 +52,17 @@ func kvHandler(entry jetstream.KeyValueEntry) {
 func handleKVPut(ctx context.Context, entry jetstream.KeyValueEntry) {
 	key := entry.Key()
 
-	// Parse the JSON data
+	// Parse the data (try JSON first, then msgpack)
 	var v1Data map[string]any
 	if err := json.Unmarshal(entry.Value(), &v1Data); err != nil {
-		logger.With(errKey, err, "key", key).ErrorContext(ctx, "failed to unmarshal KV entry data")
-		return
+		// JSON failed, try msgpack
+		if msgErr := msgpack.Unmarshal(entry.Value(), &v1Data); msgErr != nil {
+			logger.With(errKey, err, "msgpack_error", msgErr, "key", key).ErrorContext(ctx, "failed to unmarshal KV entry data as JSON or msgpack")
+			return
+		}
+		logger.With("key", key).DebugContext(ctx, "successfully unmarshalled msgpack data")
+	} else {
+		logger.With("key", key).DebugContext(ctx, "successfully unmarshalled JSON data")
 	}
 
 	// Check if we should skip this sync operation.

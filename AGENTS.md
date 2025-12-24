@@ -22,6 +22,7 @@ LFX v1 Sources → Meltano → NATS KV → v1-sync-helper → LFX One APIs
 - **NATS KV Watcher** → **v1-sync-helper** → **LFX One Project/Committee Services**
 - **JWT Authentication** via Heimdall impersonation for secure API calls
 - **ID Mappings** stored in NATS KV bucket (`v1-mappings`)
+- **Data Encoding** supports both JSON and MessagePack formats with automatic detection
 
 ## Repository Structure
 
@@ -122,6 +123,11 @@ lfx-v1-sync-helper/
 - **Non-ephemeral consumer** for reliability
 - **Load-balanced message processing** across instances
 
+#### Data Format Handling
+- **Automatic Detection**: Tries MessagePack first, falls back to JSON
+- **Backward Compatible**: Can read both JSON and MessagePack encoded data
+- **Format Agnostic**: Processing logic unchanged regardless of encoding format
+
 ### Python ETL (Meltano)
 
 #### Configuration Structure
@@ -133,6 +139,11 @@ lfx-v1-sync-helper/
 - **DynamoDB**: Meetings data extraction
 - **PostgreSQL**: Projects and committees data
 - **NATS KV**: Target for all extracted data
+
+#### Data Format Support
+- **JSON** (default): Standard JSON encoding for record storage
+- **MessagePack**: Compact binary serialization with `msgpack: true` configuration
+- **Automatic Detection**: Both Go service and Python plugin automatically detect format when reading existing data
 
 ## CI/CD Integration
 
@@ -174,6 +185,12 @@ lfx-v1-sync-helper/
 - Follow Meltano best practices
 - Maintain `pyproject.toml` and `uv.lock` consistency
 - Environment-based configuration
+
+### Data Serialization
+- **target-nats-kv** supports both JSON and MessagePack encoding
+- Set `msgpack: true` in Meltano configuration to enable MessagePack
+- Automatic format detection when reading existing data for compatibility
+- Go service handles both formats transparently
 
 ### Container Standards
 - Multi-stage builds for size optimization
