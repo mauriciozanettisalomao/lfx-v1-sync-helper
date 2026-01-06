@@ -10,8 +10,8 @@ metadata:
     app.kubernetes.io/name: lfx-v1-sync-helper
     app.kubernetes.io/component: meltano
 spec:
-  schedule: "*/5 * * * *"  # Every 5 minutes
-  concurrencyPolicy: Forbid  # Prevent concurrent execution
+  schedule: "*/5 * * * *" # Every 5 minutes
+  concurrencyPolicy: Forbid # Prevent concurrent execution
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
@@ -21,7 +21,7 @@ spec:
         app.kubernetes.io/component: meltano
     spec:
       ttlSecondsAfterFinished: 3600 # Clean up job after 1 hour
-      backoffLimit: 3
+      backoffLimit: 1
       template:
         metadata:
           labels:
