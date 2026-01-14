@@ -28,8 +28,9 @@ func shouldSkipSync(ctx context.Context, v1Data map[string]any) bool {
 	return false
 }
 
-// kvHandler processes KV bucket updates from Meltano
-func kvHandler(entry jetstream.KeyValueEntry) {
+// kvHandler processes KV bucket updates from Meltano.
+// Returns true if the operation should be retried, false otherwise.
+func kvHandler(entry jetstream.KeyValueEntry) bool {
 	ctx := context.Background()
 
 	key := entry.Key()
@@ -40,16 +41,18 @@ func kvHandler(entry jetstream.KeyValueEntry) {
 	// Handle different operations
 	switch operation {
 	case jetstream.KeyValuePut:
-		handleKVPut(ctx, entry)
+		return handleKVPut(ctx, entry)
 	case jetstream.KeyValueDelete, jetstream.KeyValuePurge:
-		handleKVDelete(ctx, entry)
+		return handleKVDelete(ctx, entry)
 	default:
 		logger.With("key", key, "operation", operation.String()).DebugContext(ctx, "ignoring KV operation")
+		return false
 	}
 }
 
-// handleKVPut processes a KV put operation (create/update)
-func handleKVPut(ctx context.Context, entry jetstream.KeyValueEntry) {
+// handleKVPut processes a KV put operation (create/update).
+// Returns true if the operation should be retried, false otherwise.
+func handleKVPut(ctx context.Context, entry jetstream.KeyValueEntry) bool {
 	key := entry.Key()
 
 	// Parse the data (try JSON first, then msgpack)
@@ -58,7 +61,7 @@ func handleKVPut(ctx context.Context, entry jetstream.KeyValueEntry) {
 		// JSON failed, try msgpack
 		if msgErr := msgpack.Unmarshal(entry.Value(), &v1Data); msgErr != nil {
 			logger.With(errKey, err, "msgpack_error", msgErr, "key", key).ErrorContext(ctx, "failed to unmarshal KV entry data as JSON or msgpack")
-			return
+			return false
 		}
 		logger.With("key", key).DebugContext(ctx, "successfully unmarshalled msgpack data")
 	} else {
@@ -67,7 +70,7 @@ func handleKVPut(ctx context.Context, entry jetstream.KeyValueEntry) {
 
 	// Check if we should skip this sync operation.
 	if shouldSkipSync(ctx, v1Data) {
-		return
+		return false
 	}
 
 	// Extract the prefix (everything before the first period) for faster lookup.
@@ -80,46 +83,63 @@ func handleKVPut(ctx context.Context, entry jetstream.KeyValueEntry) {
 	switch prefix {
 	case "salesforce-project__c":
 		handleProjectUpdate(ctx, key, v1Data)
+		return false
 	case "platform-collaboration__c":
 		handleCommitteeUpdate(ctx, key, v1Data)
+		return false
 	case "platform-community__c":
 		handleCommitteeMemberUpdate(ctx, key, v1Data)
+		return false
 	case "itx-zoom-meetings-v2":
 		handleZoomMeetingUpdate(ctx, key, v1Data)
+		return false
 	case "itx-zoom-meetings-registrants-v2":
 		handleZoomMeetingRegistrantUpdate(ctx, key, v1Data)
+		return false
 	case "itx-zoom-meetings-mappings-v2":
 		handleZoomMeetingMappingUpdate(ctx, key, v1Data)
+		return false
 	case "itx-zoom-meetings-invite-responses-v2":
 		handleZoomMeetingInviteResponseUpdate(ctx, key, v1Data)
+		return false
 	case "itx-zoom-past-meetings-attendees":
 		handleZoomPastMeetingAttendeeUpdate(ctx, key, v1Data)
+		return false
 	case "itx-zoom-past-meetings-invitees":
 		handleZoomPastMeetingInviteeUpdate(ctx, key, v1Data)
+		return false
 	case "itx-zoom-past-meetings-mappings":
 		handleZoomPastMeetingMappingUpdate(ctx, key, v1Data)
+		return false
 	case "itx-zoom-past-meetings-recordings":
 		handleZoomPastMeetingRecordingUpdate(ctx, key, v1Data)
+		return false
 	case "itx-zoom-past-meetings-summaries":
 		handleZoomPastMeetingSummaryUpdate(ctx, key, v1Data)
+		return false
 	case "itx-zoom-past-meetings":
 		handleZoomPastMeetingUpdate(ctx, key, v1Data)
+		return false
 	case "salesforce-merged_user":
 		logger.With("key", key).DebugContext(ctx, "salesforce-merged_user sync not yet implemented")
+		return false
 	case "salesforce-alternate_email__c":
-		handleAlternateEmailUpdate(ctx, key, v1Data)
+		return handleAlternateEmailUpdate(ctx, key, v1Data)
 	default:
 		logger.With("key", key).WarnContext(ctx, "unknown object type, ignoring")
+		return false
 	}
 }
 
-// handleKVDelete processes a KV delete operation
-func handleKVDelete(ctx context.Context, entry jetstream.KeyValueEntry) {
+// handleKVDelete processes a KV delete operation.
+// Returns true if the operation should be retried, false otherwise.
+func handleKVDelete(ctx context.Context, entry jetstream.KeyValueEntry) bool {
 	key := entry.Key()
 
 	// For deletes, we would need to look up the mapping and call delete APIs
 	// This is a simplified implementation
 	logger.With("key", key).InfoContext(ctx, "delete operation not yet implemented")
+	return false
 }
 
 // extractDateOnly extracts the date part from an ISO 8601 datetime string.

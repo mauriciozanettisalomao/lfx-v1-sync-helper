@@ -20,41 +20,6 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-// kvEntry implements a mock jetstream.KeyValueEntry interface for the handler
-type kvEntry struct {
-	key       string
-	value     []byte
-	operation jetstream.KeyValueOp
-}
-
-func (e *kvEntry) Key() string {
-	return e.key
-}
-
-func (e *kvEntry) Value() []byte {
-	return e.value
-}
-
-func (e *kvEntry) Operation() jetstream.KeyValueOp {
-	return e.operation
-}
-
-func (e *kvEntry) Bucket() string {
-	return "v1-objects"
-}
-
-func (e *kvEntry) Created() time.Time {
-	return time.Now()
-}
-
-func (e *kvEntry) Delta() uint64 {
-	return 0
-}
-
-func (e *kvEntry) Revision() uint64 {
-	return 0
-}
-
 const (
 	errKey            = "error"
 	defaultListenPort = "8080"
@@ -254,65 +219,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Process KV updates using the JetStream pull consumer
-	// Multiple instances will compete for messages automatically
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				// Fetch messages with a batch size of 1 and timeout
-				msgs, err := consumer.Fetch(1, jetstream.FetchMaxWait(5*time.Second))
-				if err != nil {
-					if err == jetstream.ErrNoMessages {
-						// No messages available, continue polling
-						continue
-					}
-					logger.With(errKey, err, "consumer", consumerName).Error("error fetching messages from consumer")
-					continue
-				}
-
-				for msg := range msgs.Messages() {
-					// Parse the message as a KV entry
-					headers := msg.Headers()
-					subject := msg.Subject()
-
-					// Extract key from the subject ($KV.v1-objects.{key})
-					key := ""
-					if len(subject) > len("$KV.v1-objects.") {
-						key = subject[len("$KV.v1-objects."):]
-					}
-
-					// Determine operation from headers
-					operation := jetstream.KeyValuePut // Default to PUT
-					if opHeader := headers.Get("KV-Operation"); opHeader != "" {
-						switch opHeader {
-						case "DEL":
-							operation = jetstream.KeyValueDelete
-						case "PURGE":
-							operation = jetstream.KeyValuePurge
-						}
-					}
-
-					// Create a mock KV entry for the handler
-					entry := &kvEntry{
-						key:       key,
-						value:     msg.Data(),
-						operation: operation,
-					}
-
-					// Process the KV entry
-					kvHandler(entry)
-
-					// Acknowledge the message
-					if err := msg.Ack(); err != nil {
-						logger.With(errKey, err, "key", key).Error("failed to acknowledge JetStream message")
-					}
-				}
-			}
-		}
-	}()
+	// Start consuming KV updates using the JetStream consumer with error handling.
+	kvConsumerCtx, err := consumer.Consume(kvMessageHandler, jetstream.ConsumeErrHandler(func(consCtx jetstream.ConsumeContext, err error) {
+		logger.With(errKey, err).Error("KV consumer error encountered")
+	}))
+	if err != nil {
+		logger.With(errKey, err, "consumer", consumerName).Error("error starting KV consumer")
+		os.Exit(1)
+	}
+	defer kvConsumerCtx.Stop()
 
 	// Subscribe to WAL-listener events from the wal_listener stream
 	walStreamName := "wal_listener"
@@ -335,30 +250,34 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Start consuming WAL listener messages
-	if _, err = walConsumer.Consume(func(msg jetstream.Msg) {
-		// Process the WAL event
-		walIngestHandler(msg)
-
-		// Acknowledge the message
-		if err := msg.Ack(); err != nil {
-			logger.With(errKey, err, "subject", msg.Subject()).Error("failed to acknowledge WAL JetStream message")
-		}
-	}); err != nil {
+	// Start consuming WAL listener messages with error handling.
+	walConsumerCtx, err := walConsumer.Consume(walIngestHandler, jetstream.ConsumeErrHandler(func(consCtx jetstream.ConsumeContext, err error) {
+		logger.With(errKey, err).Error("WAL consumer error encountered")
+	}))
+	if err != nil {
 		logger.With(errKey, err, "consumer", walConsumerName).Error("error starting WAL listener consumer")
 		os.Exit(1)
 	}
+	defer walConsumerCtx.Stop()
 
 	// This next line blocks until SIGINT or SIGTERM is received, or NATS disconnects.
 	<-done
 
+	// Begin graceful shutdown process.
+	logger.Debug("beginning graceful shutdown")
+
+	// Drain consumers first (non-blocking) to mitigate "nats: connection closed"
+	// errors in the ConsumeErrHandler.
+	kvConsumerCtx.Drain()
+	walConsumerCtx.Drain()
+
 	// Cancel the background context.
 	cancel()
 
-	// Drain the connection, which will drain all subscriptions, then close the
-	// connection when complete.
+	// Drain the connection, which will drain all remaining subscriptions, then
+	// close the connection when complete (including the consumer draining).
 	if !natsConn.IsClosed() && !natsConn.IsDraining() {
-		logger.Info("draining NATS connections")
+		logger.Info("draining NATS connection")
 		if err := natsConn.Drain(); err != nil {
 			logger.With(errKey, err).Error("error draining NATS connection")
 			os.Exit(1)
@@ -366,7 +285,9 @@ func main() {
 	}
 
 	// Wait for the graceful shutdown steps to complete.
+	logger.Debug("waiting for graceful shutdown steps to complete")
 	gracefulCloseWG.Wait()
+	logger.Debug("graceful shutdown steps completed")
 
 	// Immediately close the HTTP server after graceful shutdown has finished.
 	if err = httpServer.Close(); err != nil {

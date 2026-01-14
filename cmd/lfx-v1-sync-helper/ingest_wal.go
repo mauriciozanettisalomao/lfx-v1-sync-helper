@@ -83,6 +83,7 @@ func (w *WALEvent) GetSFID() (string, bool) {
 // It handles INSERT, UPDATE, and DELETE operations by upserting or marking
 // records as deleted in the v1-objects KV bucket. This enables real-time
 // synchronization of PostgreSQL changes to the KV store for downstream consumption.
+// Handles ACK/NAK logic internally based on retry conditions.
 func walIngestHandler(msg jetstream.Msg) {
 	ctx := context.Background()
 
@@ -93,12 +94,18 @@ func walIngestHandler(msg jetstream.Msg) {
 	var walEvent WALEvent
 	if err := json.Unmarshal(msg.Data(), &walEvent); err != nil {
 		logger.With(errKey, err, "subject", subject).ErrorContext(ctx, "failed to unmarshal WAL event")
+		if ackErr := msg.Ack(); ackErr != nil {
+			logger.With(errKey, ackErr, "subject", subject).Error("failed to acknowledge WAL JetStream message")
+		}
 		return
 	}
 
 	// Validate the WAL event.
 	if !walEvent.IsValid() {
 		logger.With("subject", subject, "event", walEvent).WarnContext(ctx, "invalid WAL event, missing required fields")
+		if ackErr := msg.Ack(); ackErr != nil {
+			logger.With(errKey, ackErr, "subject", subject).Error("failed to acknowledge WAL JetStream message")
+		}
 		return
 	}
 
@@ -111,15 +118,33 @@ func walIngestHandler(msg jetstream.Msg) {
 	).DebugContext(ctx, "processing WAL event")
 
 	// Handle different actions using typed constants.
+	var shouldRetry bool
 	switch walEvent.ActionKind() {
 	case ActionInsert, ActionUpdate:
-		handleWALUpsert(ctx, &walEvent)
+		shouldRetry = handleWALUpsert(ctx, &walEvent)
 	case ActionDelete:
-		handleWALDelete(ctx, &walEvent)
+		shouldRetry = handleWALDelete(ctx, &walEvent)
 	case ActionTruncate:
 		logger.With("action", walEvent.Action, "table", walEvent.Table).DebugContext(ctx, "truncate action not supported, ignoring")
+		shouldRetry = false
 	default:
 		logger.With("action", walEvent.Action, "table", walEvent.Table).WarnContext(ctx, "unknown WAL action, ignoring")
+		shouldRetry = false
+	}
+
+	// Handle message acknowledgment based on retry decision.
+	if shouldRetry {
+		// NAK the message to trigger retry.
+		if err := msg.Nak(); err != nil {
+			logger.With(errKey, err, "subject", subject).Error("failed to NAK WAL JetStream message for retry")
+		} else {
+			logger.With("subject", subject).Debug("NAKed WAL message for retry")
+		}
+	} else {
+		// Acknowledge the message.
+		if err := msg.Ack(); err != nil {
+			logger.With(errKey, err, "subject", subject).Error("failed to acknowledge WAL JetStream message")
+		}
 	}
 }
 
@@ -129,12 +154,13 @@ func walIngestHandler(msg jetstream.Msg) {
 // It implements conditional upsert logic that only updates records if EITHER systemmodstamp
 // OR lastmodifieddate in the new data is later than the existing record. This ensures
 // that only newer changes are propagated while avoiding unnecessary updates.
-func handleWALUpsert(ctx context.Context, walEvent *WALEvent) {
+// Returns true if the operation should be retried (only for KV revision mismatches), false otherwise.
+func handleWALUpsert(ctx context.Context, walEvent *WALEvent) bool {
 	// Extract the SFID using the helper method.
 	sfid, exists := walEvent.GetSFID()
 	if !exists {
 		logger.With("table", walEvent.Table, "action", walEvent.Action).WarnContext(ctx, "WAL event missing or empty sfid field, skipping")
-		return
+		return false
 	}
 
 	// Construct the key based on schema and table name.
@@ -145,7 +171,7 @@ func handleWALUpsert(ctx context.Context, walEvent *WALEvent) {
 	existing, err := v1KV.Get(ctx, key)
 	if err != nil && err != jetstream.ErrKeyNotFound {
 		logger.With(errKey, err, "key", key).ErrorContext(ctx, "failed to get existing KV entry")
-		return
+		return false
 	}
 
 	var shouldUpdate bool
@@ -164,14 +190,14 @@ func handleWALUpsert(ctx context.Context, walEvent *WALEvent) {
 			// Try msgpack if JSON fails.
 			if msgpackErr := msgpack.Unmarshal(existing.Value(), &existingData); msgpackErr != nil {
 				logger.With(errKey, unmarshalErr, "msgpack_error", msgpackErr, "key", key).ErrorContext(ctx, "failed to unmarshal existing KV entry data")
-				return
+				return false
 			}
 		}
 
 		// Check if the record was marked as deleted in the target.
 		if deletedAt, exists := existingData["_sdc_deleted_at"]; exists && deletedAt != nil {
 			logger.With("key", key).WarnContext(ctx, "skipping WAL upsert for deleted record")
-			return
+			return false
 		}
 
 		// Compare timestamps to determine if we should update.
@@ -193,27 +219,39 @@ func handleWALUpsert(ctx context.Context, walEvent *WALEvent) {
 		}
 		if err != nil {
 			logger.With(errKey, err, "key", key, "use_msgpack", cfg.UseMsgpack).ErrorContext(ctx, "failed to marshal WAL data")
-			return
+			return false
 		}
 
 		if lastRevision == 0 {
 			// Create new entry.
 			if _, err := v1KV.Create(ctx, key, dataBytes); err != nil {
+				// Check if this is a revision mismatch (key already exists) that should be retried.
+				if isRevisionMismatchError(err) {
+					logger.With(errKey, err, "key", key).WarnContext(ctx, "KV create failed due to existing key, will retry")
+					return true
+				}
 				logger.With(errKey, err, "key", key).ErrorContext(ctx, "failed to create KV entry from WAL event")
-				return
+				return false
 			}
 			logger.With("key", key, "action", walEvent.Action, "encoding", getEncodingFormat()).InfoContext(ctx, "created KV entry from WAL event")
 		} else {
 			// Update existing entry.
 			if _, err := v1KV.Update(ctx, key, dataBytes, lastRevision); err != nil {
+				// Check if this is a revision mismatch that should be retried.
+				if isRevisionMismatchError(err) {
+					logger.With(errKey, err, "key", key, "revision", lastRevision).WarnContext(ctx, "KV revision mismatch, will retry")
+					return true
+				}
 				logger.With(errKey, err, "key", key, "revision", lastRevision).ErrorContext(ctx, "failed to update KV entry from WAL event")
-				return
+				return false
 			}
 			logger.With("key", key, "action", walEvent.Action, "revision", lastRevision, "encoding", getEncodingFormat()).InfoContext(ctx, "updated KV entry from WAL event")
 		}
 	} else {
 		logger.With("key", key, "action", walEvent.Action).DebugContext(ctx, "skipping WAL upsert - existing data is newer or same")
 	}
+
+	return false
 }
 
 // handleWALDelete processes DELETE WAL events by marking records as deleted in v1-objects KV bucket.
@@ -221,12 +259,13 @@ func handleWALUpsert(ctx context.Context, walEvent *WALEvent) {
 // It encodes the updated data using the configured format (JSON by default, or MessagePack if cfg.UseMsgpack is true).
 // Instead of removing the record entirely, it adds a "_sdc_deleted_at" timestamp field
 // to maintain an audit trail and allow downstream systems to handle deletion appropriately.
-func handleWALDelete(ctx context.Context, walEvent *WALEvent) {
+// Returns true if the operation should be retried (only for KV revision mismatches), false otherwise.
+func handleWALDelete(ctx context.Context, walEvent *WALEvent) bool {
 	// Extract the SFID using the helper method (which handles DELETE action correctly).
 	sfid, exists := walEvent.GetSFID()
 	if !exists {
 		logger.With("table", walEvent.Table, "action", walEvent.Action).WarnContext(ctx, "WAL delete event missing or empty sfid field, skipping")
-		return
+		return false
 	}
 
 	// Construct the key based on schema and table name.
@@ -238,10 +277,10 @@ func handleWALDelete(ctx context.Context, walEvent *WALEvent) {
 	if err == jetstream.ErrKeyNotFound {
 		// Key doesn't exist, nothing to delete.
 		logger.With("key", key).DebugContext(ctx, "WAL delete event for non-existent key, skipping")
-		return
+		return false
 	} else if err != nil {
 		logger.With(errKey, err, "key", key).ErrorContext(ctx, "failed to get existing KV entry for delete")
-		return
+		return false
 	}
 
 	// Parse existing data.
@@ -250,7 +289,7 @@ func handleWALDelete(ctx context.Context, walEvent *WALEvent) {
 		// Try msgpack if JSON fails.
 		if msgpackErr := msgpack.Unmarshal(existing.Value(), &existingData); msgpackErr != nil {
 			logger.With(errKey, unmarshalErr, "msgpack_error", msgpackErr, "key", key).ErrorContext(ctx, "failed to unmarshal existing KV entry data for delete")
-			return
+			return false
 		}
 	}
 
@@ -269,16 +308,22 @@ func handleWALDelete(ctx context.Context, walEvent *WALEvent) {
 	}
 	if err != nil {
 		logger.With(errKey, err, "key", key, "use_msgpack", cfg.UseMsgpack).ErrorContext(ctx, "failed to marshal deletion marker data")
-		return
+		return false
 	}
 
 	// Update the entry with the deletion marker.
 	if _, err := v1KV.Update(ctx, key, dataBytes, existing.Revision()); err != nil {
+		// Check if this is a revision mismatch that should be retried.
+		if isRevisionMismatchError(err) {
+			logger.With(errKey, err, "key", key, "revision", existing.Revision()).WarnContext(ctx, "KV revision mismatch on delete, will retry")
+			return true
+		}
 		logger.With(errKey, err, "key", key, "revision", existing.Revision()).ErrorContext(ctx, "failed to update KV entry with deletion marker")
-		return
+		return false
 	}
 
 	logger.With("key", key, "encoding", getEncodingFormat()).InfoContext(ctx, "marked KV entry as deleted from WAL event")
+	return false
 }
 
 // shouldUpdateBasedOnTimestamps compares timestamps between new and existing data to determine if an update should occur.
@@ -372,6 +417,26 @@ func parseTimestamp(timestampStr string) (time.Time, error) {
 	}
 
 	return time.Time{}, fmt.Errorf("unable to parse timestamp: %s", timestampStr)
+}
+
+// isRevisionMismatchError checks if an error is a KV revision mismatch that should be retried.
+func isRevisionMismatchError(err error) bool {
+	// Attempt direct JetStreamError comparison.
+	if jsErr, ok := err.(jetstream.JetStreamError); ok {
+		if apiErr := jsErr.APIError(); apiErr != nil {
+			return apiErr.ErrorCode == jetstream.JSErrCodeStreamWrongLastSequence
+		}
+	}
+
+	// Check for NATS error strings containing the expected error codes.
+	errStr := err.Error()
+	if strings.Contains(errStr, "err_code=10071") ||
+		strings.Contains(errStr, "wrong last sequence") ||
+		strings.Contains(errStr, "key exists") {
+		return true
+	}
+
+	return false
 }
 
 // getEncodingFormat returns a string representation of the current encoding format.
