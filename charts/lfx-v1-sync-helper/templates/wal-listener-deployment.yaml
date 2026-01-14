@@ -52,28 +52,6 @@ spec:
                   name: {{ .Values.walListener.config.database.secret.name }}
                   key: {{ .Values.walListener.config.database.secret.passwordKey }}
                   optional: true
-            - name: WAL_DATABASE_PORT
-              value: "{{ .Values.walListener.config.database.port }}"
-            - name: WAL_DATABASE_NAME
-              value: "{{ .Values.walListener.config.database.name }}"
-            - name: WAL_LISTENER_SERVERPORT
-              value: "{{ .Values.walListener.config.listener.serverPort }}"
-            - name: WAL_LISTENER_SLOTNAME
-              value: "{{ .Values.walListener.config.listener.slotName }}"
-            - name: WAL_LISTENER_REFRESHCONNECTION
-              value: "{{ .Values.walListener.config.listener.refreshConnection }}"
-            - name: WAL_LISTENER_HEARTBEATINTERVAL
-              value: "{{ .Values.walListener.config.listener.heartbeatInterval }}"
-            - name: WAL_LOGGER_LEVEL
-              value: "{{ .Values.walListener.config.logger.level }}"
-            - name: WAL_LOGGER_FMT
-              value: "{{ .Values.walListener.config.logger.fmt }}"
-            - name: WAL_PUBLISHER_TYPE
-              value: "{{ .Values.walListener.config.publisher.type }}"
-            - name: WAL_PUBLISHER_ADDRESS
-              value: "{{ .Values.walListener.config.publisher.address }}"
-            - name: WAL_PUBLISHER_TOPIC
-              value: "{{ .Values.walListener.config.publisher.topic }}"
           volumeMounts:
             - name: config
               mountPath: /app/config.yml

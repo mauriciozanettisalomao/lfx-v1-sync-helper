@@ -194,6 +194,12 @@ walListener:
       port: 5432
       # name is the database name
       name: sfdc
+      # TLS configuration for PostgreSQL connection
+      # enableTLS determines whether to use TLS/SSL connection to PostgreSQL
+      enableTLS: false
+      # sslMode specifies the TLS verification mode when enableTLS is true: require, verify-ca, verify-full
+      sslMode: "require"
+
     publisher:
       # type is the publisher type (nats or kafka)
       type: nats

@@ -12,9 +12,11 @@ metadata:
     component: wal-listener
 data:
   config.yml: |
-    # Most configuration is provided via environment variables with WAL_ prefix.
-    # Only table filter configuration is specified here as it requires complex YAML structure.
     listener:
+      serverPort: {{ .Values.walListener.config.listener.serverPort }}
+      slotName: {{ .Values.walListener.config.listener.slotName | quote }}
+      refreshConnection: {{ .Values.walListener.config.listener.refreshConnection }}
+      heartbeatInterval: {{ .Values.walListener.config.listener.heartbeatInterval }}
       filter:
         tables:
           {{- range $table, $operations := .Values.walListener.config.listener.filter.tables }}
@@ -23,4 +25,21 @@ data:
             - {{ $operation }}
             {{- end }}
           {{- end }}
+    logger:
+      level: {{ .Values.walListener.config.logger.level }}
+      fmt: {{ .Values.walListener.config.logger.fmt }}
+    database:
+      host: localhost
+      port: {{ .Values.walListener.config.database.port }}
+      name: {{ .Values.walListener.config.database.name | quote }}
+      user: placeholder
+      password: placeholder
+      enableTLS: {{ .Values.walListener.config.database.enableTLS }}
+      {{- if .Values.walListener.config.database.sslMode }}
+      sslMode: {{ .Values.walListener.config.database.sslMode | quote }}
+      {{- end }}
+    publisher:
+      type: {{ .Values.walListener.config.publisher.type }}
+      address: {{ .Values.walListener.config.publisher.address | quote }}
+      topic: {{ .Values.walListener.config.publisher.topic | quote }}
 {{- end }}
