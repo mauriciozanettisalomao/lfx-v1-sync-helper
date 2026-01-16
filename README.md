@@ -134,7 +134,7 @@ sequenceDiagram
     participant opensearch as OpenSearch
 
     v1_kv-)+v1-sync-helper: notification on KV bucket subject
-    v1-sync-helper->>v1-sync-helper: check if delete or upsert
+    v1-sync-helper->>v1-sync-helper: check if delete (hard or soft) or upsert
     v1-sync-helper->>v1-sync-helper: check if upsert was by v1-sync-helper's M2M client ID
     v1-sync-helper->>+mapping-db: check for v1->v2 ID mapping
     mapping-db--)-v1-sync-helper: v2 ID, deletion tombstone, or empty
@@ -155,8 +155,8 @@ sequenceDiagram
     projects-api -) opensearch: index deletion transection (via indexer)
     Note right of v1-sync-helper: if the DELETE fails, notify team and abort
     projects-api --)- v1-sync-helper: 204 (no body)
-    v1-sync-helper -) mapping-db: delete v1->v2 mapping
-    v1-sync-helper -) mapping-db: delete v2->v1 mapping
+    v1-sync-helper -) mapping-db: tombstone 🪦 v1->v2 mapping
+    v1-sync-helper -) mapping-db: tombstone 🪦 v2->v1 mapping
     else item upsert & NOT last-modified-by v1-sync-helper & mapping empty
     Note right of v1-sync-helper: This is a "create" from v1
     v1-sync-helper->>v1-sync-helper: impersonate v1 principal w/ Heimdall key
@@ -291,8 +291,8 @@ sequenceDiagram
     projects-api -) opensearch: index deletion transection (via indexer)
     Note right of v1-sync-helper: if the DELETE fails, notify team and abort
     projects-api --)- v1-sync-helper: 204 (no body)
-    v1-sync-helper -) mapping-db: delete v1->v2 mapping
-    v1-sync-helper -) mapping-db: delete v2->v1 mapping
+    v1-sync-helper -) mapping-db: tombstone 🪦 v1->v2 mapping
+    v1-sync-helper -) mapping-db: tombstone 🪦 v2->v1 mapping
     else item upsert & NOT last-modified-by v1-sync-helper & mapping empty
     Note right of v1-sync-helper: This is a "create" from v1
     v1-sync-helper->>v1-sync-helper: impersonate v1 principal w/ Heimdall key
@@ -339,8 +339,8 @@ sequenceDiagram
     mapping-db--)-v1-sync-helper: v1 ID
     v1-sync-helper->>+lfx_v1: delete in v1
     lfx_v1->>-v1-sync-helper: 204 (no content)
-    v1-sync-helper -) mapping-db: delete v1->v2 mapping
-    v1-sync-helper -) mapping-db: delete v2->v1 mapping
+    v1-sync-helper -) mapping-db: tombstone 🪦 v2->v1 mapping
+    v1-sync-helper -) mapping-db: tombstone 🪦 v1->v2 mapping
     end
     deactivate v1-sync-helper
 ```

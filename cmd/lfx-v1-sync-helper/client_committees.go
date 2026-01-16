@@ -173,6 +173,48 @@ func updateCommitteeMember(ctx context.Context, payload *committeeservice.Update
 	return nil
 }
 
+// deleteCommittee deletes a committee by UID.
+func deleteCommittee(ctx context.Context, committeeUID string, v1Principal string) error {
+	token, err := generateCachedJWTToken(ctx, committeeServiceAudience, v1Principal)
+	if err != nil {
+		return fmt.Errorf("failed to generate token for committee deletion: %w", err)
+	}
+
+	payload := &committeeservice.DeleteCommitteePayload{
+		BearerToken: &token,
+		UID:         &committeeUID,
+	}
+
+	err = committeeClient.DeleteCommittee(ctx, payload)
+	if err != nil {
+		return fmt.Errorf("failed to delete committee: %w", err)
+	}
+
+	return nil
+}
+
+// deleteCommitteeMember deletes a committee member by committee UID and member UID.
+func deleteCommitteeMember(ctx context.Context, committeeUID, memberUID string, v1Principal string) error {
+	token, err := generateCachedJWTToken(ctx, committeeServiceAudience, v1Principal)
+	if err != nil {
+		return fmt.Errorf("failed to generate token for committee member deletion: %w", err)
+	}
+
+	payload := &committeeservice.DeleteCommitteeMemberPayload{
+		BearerToken: &token,
+		UID:         committeeUID,
+		MemberUID:   memberUID,
+		Version:     "1",
+	}
+
+	err = committeeClient.DeleteCommitteeMember(ctx, payload)
+	if err != nil {
+		return fmt.Errorf("failed to delete committee member: %w", err)
+	}
+
+	return nil
+}
+
 // committeeMembersEqual compares a committee member with an update payload for equality.
 func committeeMembersEqual(current *committeeservice.CommitteeMemberFullWithReadonlyAttributes, update *committeeservice.UpdateCommitteeMemberPayload) bool {
 	// Compare basic fields.

@@ -325,7 +325,7 @@ meltano:
       # validate records before storing (true for PostgreSQL, false for DynamoDB)
       validateRecords: true
       # use MessagePack encoding
-      useMessagePack: true
+      useMessagePack: false
     # resources is the resource configuration for the Meltano container
     resources:
       requests:
