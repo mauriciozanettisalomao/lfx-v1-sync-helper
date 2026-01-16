@@ -544,7 +544,7 @@ func convertMapToInputSurveyResponse(ctx context.Context, v1Data map[string]any)
 		CreatedAt:                   responseDB.CreatedAt,
 		ResponseDatetime:            responseDB.ResponseDatetime,
 		LastReceivedTime:            responseDB.LastReceivedTime,
-		Username:                    responseDB.Username,
+		Username:                    mapUsernameToAuthSub(responseDB.Username),
 		VotingStatus:                responseDB.VotingStatus,
 		Role:                        responseDB.Role,
 		JobTitle:                    responseDB.JobTitle,
@@ -555,12 +555,18 @@ func convertMapToInputSurveyResponse(ctx context.Context, v1Data map[string]any)
 		SurveyLink:                  responseDB.SurveyLink,
 		SurveyMonkeyQuestionAnswers: responseDB.SurveyMonkeyQuestionAnswers,
 		SESMessageID:                responseDB.SESMessageID,
+		SESDeliverySuccessful:       responseDB.SESDeliverySuccessful,
 		SESBounceType:               responseDB.SESBounceType,
 		SESBounceSubtype:            responseDB.SESBounceSubtype,
 		SESBounceDiagnosticCode:     responseDB.SESBounceDiagnosticCode,
 		SESComplaintExists:          responseDB.SESComplaintExists,
 		SESComplaintType:            responseDB.SESComplaintType,
 		SESComplaintDate:            responseDB.SESComplaintDate,
+		EmailOpenedFirstTime:        responseDB.EmailOpenedFirstTime,
+		EmailOpenedLastTime:         responseDB.EmailOpenedLastTime,
+		LinkClickedFirstTime:        responseDB.LinkClickedFirstTime,
+		LinkClickedLastTime:         responseDB.LinkClickedLastTime,
+		Excluded:                    responseDB.Excluded,
 	}
 
 	// Convert string int fields to actual ints

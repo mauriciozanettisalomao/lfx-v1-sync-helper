@@ -1,3 +1,7 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Package main contains handlers for data ingestion
 package main
 
 //

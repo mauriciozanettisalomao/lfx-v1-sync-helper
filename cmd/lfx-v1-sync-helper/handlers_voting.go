@@ -242,10 +242,10 @@ func handleVoteUpdate(ctx context.Context, key string, v1Data map[string]any) {
 	// convertMapToInputVote has already looked up the SFID project ID
 	// mapping, we don't need to do it again: we can just check if ProjectID (v2
 	// UID) is set.
-	// if vote.ProjectUID == "" {
-	// 	funcLogger.With("project_id", vote.ProjectID).InfoContext(ctx, "skipping vote sync - parent project not found in mappings")
-	// 	return
-	// }
+	if vote.ProjectUID == "" {
+		funcLogger.With("project_id", vote.ProjectID).InfoContext(ctx, "skipping vote sync - parent project not found in mappings")
+		return
+	}
 
 	mappingKey := fmt.Sprintf("vote.%s", uid)
 	indexerAction := indexerConstants.ActionCreated
@@ -483,13 +483,13 @@ func handleIndividualVoteUpdate(ctx context.Context, key string, v1Data map[stri
 	funcLogger = funcLogger.With("individual_vote_id", uid)
 
 	// Check if parent project exists in mappings before proceeding. Because
-	// convertMapToInputVote has already looked up the SFID project ID
+	// convertMapToInputIndividualVote has already looked up the SFID project ID
 	// mapping, we don't need to do it again: we can just check if ProjectID (v2
 	// UID) is set.
-	// if individualVote.ProjectUID == "" {
-	// 	funcLogger.With("project_id", individualVote.ProjectID).InfoContext(ctx, "skipping individual vote sync - parent project not found in mappings")
-	// 	return
-	// }
+	if individualVote.ProjectUID == "" {
+		funcLogger.With("project_id", individualVote.ProjectID).InfoContext(ctx, "skipping individual vote sync - parent project not found in mappings")
+		return
+	}
 
 	mappingKey := fmt.Sprintf("individual_vote.%s", uid)
 	indexerAction := indexerConstants.ActionCreated
