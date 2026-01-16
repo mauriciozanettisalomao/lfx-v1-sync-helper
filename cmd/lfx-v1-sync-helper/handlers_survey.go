@@ -133,6 +133,11 @@ func sendSurveyAccessMessage(survey SurveyInput) error {
 		references["project"] = projectRefs
 	}
 
+	// Skip sending access message if there are no references
+	if len(references) == 0 {
+		return nil
+	}
+
 	accessMsg := GenericFGAMessage{
 		ObjectType: "survey",
 		Operation:  "update_access",
@@ -482,6 +487,11 @@ func sendSurveyResponseAccessMessage(data SurveyResponseInput) error {
 	}
 	if data.CommitteeUID != "" {
 		references["committee"] = []string{data.CommitteeUID}
+	}
+
+	// Skip sending access message if there are no relations or references
+	if len(relations) == 0 && len(references) == 0 {
+		return nil
 	}
 
 	accessMsg := GenericFGAMessage{

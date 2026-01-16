@@ -105,16 +105,26 @@ func sendVoteIndexerMessage(ctx context.Context, subject string, action indexerC
 
 // sendVoteAccessMessage sends the message to the NATS server for the vote access control.
 func sendVoteAccessMessage(vote InputVote) error {
+	relations := map[string][]string{}
+	if vote.ProjectUID != "" {
+		relations["project"] = []string{vote.ProjectUID}
+	}
+	if vote.CommitteeUID != "" {
+		relations["committee"] = []string{vote.CommitteeUID}
+	}
+
+	// Skip sending access message if there are no relations
+	if len(relations) == 0 {
+		return nil
+	}
+
 	accessMsg := GenericFGAMessage{
 		ObjectType: "vote",
 		Operation:  "update_access",
 		Data: map[string]interface{}{
-			"uid":    vote.UID,
-			"public": false,
-			"relations": map[string][]string{
-				"project":   []string{vote.ProjectUID},
-				"committee": []string{vote.CommitteeUID},
-			},
+			"uid":       vote.UID,
+			"public":    false,
+			"relations": relations,
 		},
 	}
 	accessMsgBytes, err := json.Marshal(accessMsg)
@@ -318,20 +328,33 @@ func sendIndividualVoteIndexerMessage(ctx context.Context, subject string, actio
 
 // sendIndividualVoteAccessMessage sends the message to the NATS server for the individual vote access control.
 func sendIndividualVoteAccessMessage(data IndividualVoteInput) error {
+	relations := map[string][]string{}
+	if data.Username != "" {
+		relations["writer"] = []string{data.Username}
+		relations["viewer"] = []string{data.Username}
+	}
+
+	references := map[string][]string{}
+	if data.ProjectUID != "" {
+		references["project"] = []string{data.ProjectUID}
+	}
+	if data.VoteUID != "" {
+		references["vote"] = []string{data.VoteUID}
+	}
+
+	// Skip sending access message if there are no relations or references
+	if len(relations) == 0 && len(references) == 0 {
+		return nil
+	}
+
 	accessMsg := GenericFGAMessage{
-		ObjectType: "vote",
+		ObjectType: "individual_vote",
 		Operation:  "update_access",
 		Data: map[string]interface{}{
-			"uid":    data.UID,
-			"public": false,
-			"relations": map[string][]string{
-				"writer": []string{data.Username},
-				"viewer": []string{data.Username},
-			},
-			"references": map[string][]string{
-				"project": []string{data.ProjectUID},
-				"vote":    []string{data.VoteUID},
-			},
+			"uid":        data.UID,
+			"public":     false,
+			"relations":  relations,
+			"references": references,
 		},
 	}
 	accessMsgBytes, err := json.Marshal(accessMsg)
