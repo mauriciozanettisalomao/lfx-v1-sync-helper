@@ -15,6 +15,11 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
+const (
+	// tombstoneMarker is used to mark deleted mappings in the KV store.
+	tombstoneMarker = "!del"
+)
+
 // shouldSkipSync checks if the record was last modified by this service and
 // should be skipped, because it originated in v2, and therefore does not need
 // to be synced from v1.
@@ -200,8 +205,7 @@ func handleResourceDelete(ctx context.Context, key string, v1Principal string) b
 
 // tombstoneMapping stores a tombstone marker in the mapping KV store.
 func tombstoneMapping(ctx context.Context, mappingKey string) error {
-	tombstone := "🪦"
-	if _, err := mappingsKV.Put(ctx, mappingKey, []byte(tombstone)); err != nil {
+	if _, err := mappingsKV.Put(ctx, mappingKey, []byte(tombstoneMarker)); err != nil {
 		return fmt.Errorf("failed to tombstone mapping %s: %w", mappingKey, err)
 	}
 	return nil
@@ -209,7 +213,7 @@ func tombstoneMapping(ctx context.Context, mappingKey string) error {
 
 // isTombstonedMapping checks if a mapping is tombstoned.
 func isTombstonedMapping(mappingValue []byte) bool {
-	return string(mappingValue) == "🪦"
+	return string(mappingValue) == tombstoneMarker
 }
 
 // extractV1Principal extracts the v1 principal from v1 data.
