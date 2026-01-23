@@ -204,12 +204,17 @@ func handleResourceDelete(ctx context.Context, key string, v1Principal string) b
 	case "platform-community__c":
 		return handleCommitteeMemberDelete(ctx, key, sfid, v1Principal)
 	case "salesforce-merged_user":
-		// Merged user records are used on-demand during user lookups from v1-objects KV bucket.
-		// No special processing needed for deletion - record will be marked as deleted in KV bucket.
+		// Merged user records are used on-demand during user lookups from the v1-objects KV bucket.
+		// No special processing needed here for hard deletes; this handler does not write a KV tombstone.
+		// TODO: Should clean up (tombstone) any per-user mappings, like the user sfid->email sfid index mapping.
 		logger.With("key", key).DebugContext(ctx, "salesforce-merged_user record deleted")
 		return false
 	case "salesforce-alternate_email__c":
-		return handleAlternateEmailDelete(ctx, key, sfid, v1Principal)
+		// Alternate email records remain in v1-objects KV bucket with _sdc_deleted_at set by WAL handler.
+		// The email mapping index also remains, but lookups will detect the soft-delete and skip the email.
+		// TODO: Should clean up (remove) soft-deleted email SFIDs from v1-merged-user.alternate-emails.{userSfid} mapping records.
+		logger.With("key", key).DebugContext(ctx, "salesforce-alternate_email__c record deleted")
+		return false
 	case "itx-zoom-meetings-v2", "itx-zoom-meetings-registrants-v2", "itx-zoom-meetings-mappings-v2", "itx-zoom-meetings-invite-responses-v2", "itx-zoom-past-meetings-attendees", "itx-zoom-past-meetings-invitees", "itx-zoom-past-meetings-mappings", "itx-zoom-past-meetings-recordings", "itx-zoom-past-meetings-summaries", "itx-zoom-past-meetings":
 		logger.With("key", key).DebugContext(ctx, "meeting-related delete not yet implemented")
 		return false

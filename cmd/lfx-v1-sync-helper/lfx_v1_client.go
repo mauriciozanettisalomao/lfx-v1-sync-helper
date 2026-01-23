@@ -30,6 +30,7 @@ import (
 	"github.com/auth0/go-auth0/authentication"
 	"github.com/auth0/go-auth0/authentication/oauth"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/vmihailenco/msgpack/v5"
 	"golang.org/x/oauth2"
 )
 
@@ -148,12 +149,22 @@ func lookupV1User(ctx context.Context, platformID string) (*V1User, error) {
 	// Parse the merged_user data
 	var userData map[string]any
 	if err := json.Unmarshal(entry.Value(), &userData); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal user data: %w", err)
+		// Try msgpack if JSON fails.
+		if msgpackErr := msgpack.Unmarshal(entry.Value(), &userData); msgpackErr != nil {
+			return nil, fmt.Errorf("failed to unmarshal user data (json: %w, msgpack: %w)", err, msgpackErr)
+		}
 	}
 
 	// Check if the user record is deleted
 	if isDeleted, ok := userData["isdeleted"].(bool); ok && isDeleted {
-		return nil, fmt.Errorf("user %s is marked as deleted", platformID)
+		return nil, fmt.Errorf("user %s is deleted (isdeleted)", platformID)
+	}
+
+	// Also treat WAL-based soft deletes (indicated by _sdc_deleted_at) as deleted.
+	if deletedAt, ok := userData["_sdc_deleted_at"]; ok {
+		if s, okStr := deletedAt.(string); (okStr && strings.TrimSpace(s) != "") || (!okStr && deletedAt != nil) {
+			return nil, fmt.Errorf("user %s is deleted (_sdc_deleted_at))", platformID)
+		}
 	}
 
 	// Extract user fields from the merged_user record
@@ -215,7 +226,8 @@ func getPrimaryEmailForUser(ctx context.Context, userSfid string) (string, error
 		return "", fmt.Errorf("user %s has no alternate emails", userSfid)
 	}
 
-	// Look up each email record to find the primary one
+	// Single pass: look for primary email while tracking first valid fallback
+	var fallbackEmail string
 	for _, emailSfid := range emailSfids {
 		email, isPrimary, isTombstoned, err := getAlternateEmailDetails(ctx, emailSfid)
 		if err != nil {
@@ -227,19 +239,21 @@ func getPrimaryEmailForUser(ctx context.Context, userSfid string) (string, error
 			continue
 		}
 
-		// Return the first primary email we find
+		// Return immediately if we find a primary email
 		if isPrimary && email != "" {
 			return email, nil
+		}
+
+		// Track first valid email as fallback
+		if fallbackEmail == "" && email != "" {
+			fallbackEmail = email
 		}
 	}
 
 	// If no primary email found, return the first valid email as fallback
-	for _, emailSfid := range emailSfids {
-		email, _, isTombstoned, err := getAlternateEmailDetails(ctx, emailSfid)
-		if err == nil && !isTombstoned && email != "" {
-			logger.With("user_sfid", userSfid, "email", email).DebugContext(ctx, "using first available email as fallback (no primary found)")
-			return email, nil
-		}
+	if fallbackEmail != "" {
+		logger.With("user_sfid", userSfid, "email", fallbackEmail).DebugContext(ctx, "using first available email as fallback (no primary found)")
+		return fallbackEmail, nil
 	}
 
 	return "", fmt.Errorf("no valid emails found for user %s", userSfid)
@@ -252,8 +266,8 @@ func getAlternateEmailDetails(ctx context.Context, emailSfid string) (email stri
 
 	entry, err := v1KV.Get(ctx, emailKey)
 	if err != nil {
-		if err == jetstream.ErrKeyNotFound {
-			// Key not found could mean it was tombstoned/deleted
+		if err == jetstream.ErrKeyNotFound || err == jetstream.ErrKeyDeleted {
+			// Key not found or deleted could mean it was tombstoned/deleted
 			return "", false, true, nil
 		}
 		return "", false, false, fmt.Errorf("failed to get email record %s from v1-objects: %w", emailSfid, err)
@@ -267,12 +281,27 @@ func getAlternateEmailDetails(ctx context.Context, emailSfid string) (email stri
 	// Parse the alternate email record
 	var emailData map[string]any
 	if err := json.Unmarshal(entry.Value(), &emailData); err != nil {
-		return "", false, false, fmt.Errorf("failed to unmarshal email data: %w", err)
+		// Try msgpack if JSON fails.
+		if msgpackErr := msgpack.Unmarshal(entry.Value(), &emailData); msgpackErr != nil {
+			return "", false, false, fmt.Errorf("failed to unmarshal email data (json: %w, msgpack: %w)", err, msgpackErr)
+		}
 	}
 
-	// Check if the email record is deleted (not expected, this would have been
-	// removed from the mapping index).
+	// Check if the email record is deleted.
 	if isDeleted, ok := emailData["isdeleted"].(bool); ok && isDeleted {
+		return "", false, true, nil
+	}
+
+	// Also check for WAL-based soft deletes (indicated by _sdc_deleted_at).
+	// This is expected when soft-deleted email records are preserved in v1-objects KV bucket.
+	if deletedAt, ok := emailData["_sdc_deleted_at"]; ok {
+		if s, okStr := deletedAt.(string); (okStr && strings.TrimSpace(s) != "") || (!okStr && deletedAt != nil) {
+			return "", false, true, nil
+		}
+	}
+
+	// Also check if the email is inactive (active__c is not true).
+	if isActive, ok := emailData["active__c"].(bool); !ok || !isActive {
 		return "", false, true, nil
 	}
 
@@ -331,8 +360,7 @@ func getV1OrganizationFromOrgSvc(ctx context.Context, sfid string) (*V1Organizat
 	return org, nil
 }
 
-// getCachedUser retrieves a user from the mappings KV cache
-// getCachedOrg retrieves an organization from the mappings KV cache
+// getCachedV1Org retrieves an organization from the mappings KV cache
 func getCachedV1Org(ctx context.Context, sfid string) (*V1Organization, error) {
 	cacheKey := orgCacheKeyPrefix + sfid
 

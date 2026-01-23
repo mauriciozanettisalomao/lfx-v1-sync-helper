@@ -145,26 +145,3 @@ func updateEmailsList(currentEmails []string, emailSfid string, isDeleted bool) 
 	// Email already in list, nothing to add.
 	return currentEmails
 }
-
-// handleAlternateEmailDelete processes an alternate email deletion by tombstoning the email record.
-// Returns true if the operation should be retried, false otherwise.
-func handleAlternateEmailDelete(ctx context.Context, key string, sfid string, v1Principal string) bool {
-	// Tombstone the email record in the v1-objects KV bucket
-	emailKey := fmt.Sprintf("salesforce-alternate_email__c.%s", sfid)
-
-	if _, err := v1KV.Put(ctx, emailKey, []byte(tombstoneMarker)); err != nil {
-		logger.With("error", err, "email_key", emailKey, "sfid", sfid).
-			ErrorContext(ctx, "failed to tombstone alternate email record")
-		return true // Retry on failure
-	}
-
-	logger.With("email_key", emailKey, "sfid", sfid).
-		InfoContext(ctx, "successfully tombstoned alternate email record")
-
-	// Note: Tombstoned email records will remain in the user alternate email mapping lists
-	// for now. Future enhancement: implement periodic cleanup job to remove tombstoned
-	// email SFIDs from the v1-merged-user.alternate-emails.{userSfid} mapping records.
-	// This provides eventual consistency without complex deletion-time lookups.
-
-	return false
-}
