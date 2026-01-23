@@ -146,7 +146,9 @@ func handleKVPut(ctx context.Context, entry jetstream.KeyValueEntry) bool {
 		handleZoomPastMeetingUpdate(ctx, key, v1Data)
 		return false
 	case "salesforce-merged_user":
-		logger.With("key", key).DebugContext(ctx, "salesforce-merged_user sync not yet implemented")
+		// Merged user records are used on-demand during user lookups from v1-objects KV bucket.
+		// No special processing needed - just log for debugging.
+		logger.With("key", key).DebugContext(ctx, "salesforce-merged_user record updated")
 		return false
 	case "salesforce-alternate_email__c":
 		return handleAlternateEmailUpdate(ctx, key, v1Data)
@@ -202,7 +204,9 @@ func handleResourceDelete(ctx context.Context, key string, v1Principal string) b
 	case "platform-community__c":
 		return handleCommitteeMemberDelete(ctx, key, sfid, v1Principal)
 	case "salesforce-merged_user":
-		logger.With("key", key).DebugContext(ctx, "salesforce-merged_user delete not yet implemented")
+		// Merged user records are used on-demand during user lookups from v1-objects KV bucket.
+		// No special processing needed for deletion - record will be marked as deleted in KV bucket.
+		logger.With("key", key).DebugContext(ctx, "salesforce-merged_user record deleted")
 		return false
 	case "salesforce-alternate_email__c":
 		return handleAlternateEmailDelete(ctx, key, sfid, v1Principal)

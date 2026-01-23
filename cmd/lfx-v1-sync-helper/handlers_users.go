@@ -146,21 +146,25 @@ func updateEmailsList(currentEmails []string, emailSfid string, isDeleted bool) 
 	return currentEmails
 }
 
-// handleAlternateEmailDelete processes an alternate email deletion.
+// handleAlternateEmailDelete processes an alternate email deletion by tombstoning the email record.
 // Returns true if the operation should be retried, false otherwise.
 func handleAlternateEmailDelete(ctx context.Context, key string, sfid string, v1Principal string) bool {
-	// Extract user SFID from the v1 data.
-	// For alternate emails, we need to parse the relationship to find the user.
-	// This would typically require looking up the email record to get the user SFID.
+	// Tombstone the email record in the v1-objects KV bucket
+	emailKey := fmt.Sprintf("salesforce-alternate_email__c.%s", sfid)
 
-	logger.With("key", key, "sfid", sfid).InfoContext(ctx, "alternate email deletion - processing email removal")
+	if _, err := v1KV.Put(ctx, emailKey, []byte(tombstoneMarker)); err != nil {
+		logger.With("error", err, "email_key", emailKey, "sfid", sfid).
+			ErrorContext(ctx, "failed to tombstone alternate email record")
+		return true // Retry on failure
+	}
 
-	// For now, we'll mark this as handled but not fully implemented.
-	// A complete implementation would need to:
-	// 1. Look up which user this alternate email belongs to
-	// 2. Call updateUserAlternateEmails with isDeleted=true
-	// 3. Clean up any mappings
+	logger.With("email_key", emailKey, "sfid", sfid).
+		InfoContext(ctx, "successfully tombstoned alternate email record")
 
-	logger.With("key", key, "sfid", sfid, "v1_principal", v1Principal).WarnContext(ctx, "alternate email deletion not fully implemented")
+	// Note: Tombstoned email records will remain in the user alternate email mapping lists
+	// for now. Future enhancement: implement periodic cleanup job to remove tombstoned
+	// email SFIDs from the v1-merged-user.alternate-emails.{userSfid} mapping records.
+	// This provides eventual consistency without complex deletion-time lookups.
+
 	return false
 }
