@@ -98,7 +98,7 @@ Payload: <mapping_key>
 
 ### Available Lookup Patterns
 
-**Note**: While called "sfid", v1 committees and committee members actually store UUIDs in their "sfid" column, so references to `{v1_sfid}` for these entities are actually `{v1_uuid}`.
+**Note**: While called "sfid", v1 committees and committee members actually store UUIDs in their "sfid" column, so references to `{*_sfid}` for these entities will contain UUIDs.
 
 The following table shows the supported mapping key patterns and their expected response formats:
 
