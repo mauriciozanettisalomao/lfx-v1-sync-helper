@@ -12,8 +12,9 @@ import (
 
 // lookupHandler handles NATS function calls for bidirectional v1-v2 mapping lookups.
 // It receives a mapping key as the request payload and returns the corresponding
-// value from the NATS KV store, or empty string on error/not found.
-// Supports both v1->v2 and v2->v1 lookups depending on the key format used.
+// value from the NATS KV store, an empty string if the key is not found or tombstoned,
+// or an error message prefixed with "error: " for other errors. Supports both v1->v2
+// and v2->v1 lookups depending on the key format used.
 func lookupHandler(msg *nats.Msg) {
 	ctx := context.Background()
 	mappingKey := string(msg.Data)
