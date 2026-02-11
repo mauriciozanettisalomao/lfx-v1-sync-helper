@@ -68,7 +68,9 @@ spec:
                   value: {{ .Values.meltano.dynamodbEtl.aws.region | quote }}
                 # DynamoDB tap cross-account assume role configuration
                 - name: TAP_DYNAMODB_AWS_ASSUME_ROLE_ARN
-                  value: {{ printf "arn:aws:iam::%s:role/%s" (required "meltano.dynamodbEtl.aws.itx.accountId is required when dynamodbEtl is enabled" (.Values.meltano.dynamodbEtl.aws.itx.accountId | toString)) .Values.meltano.dynamodbEtl.aws.itx.roleName | quote }}
+                  {{/* Cast the accountId to int64 first, in case it is stored in yaml as a number. If it is a number it is long enough that
+                      it gets written out in scientific notation. This method is safe regardless of if it is a string or number. */}}
+                  value: {{ printf "arn:aws:iam::%s:role/%s" (required "meltano.dynamodbEtl.aws.itx.accountId is required when dynamodbEtl is enabled" (.Values.meltano.dynamodbEtl.aws.itx.accountId | int64 | toString)) .Values.meltano.dynamodbEtl.aws.itx.roleName | quote }}
                 - name: TAP_DYNAMODB_AWS_DEFAULT_REGION
                   value: {{ .Values.meltano.dynamodbEtl.aws.region | quote }}
                 # DynamoDB table scan filtering for incremental loads
