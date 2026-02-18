@@ -22,6 +22,7 @@ var projectAllowlist = []string{
 	"jdf",
 	"jdf-llc",
 	"jdf-international",
+	"lfproducts",
 	// "lfenergy",
 }
 
@@ -30,6 +31,7 @@ var projectAllowlist = []string{
 // lowercase* (lookups downcase for case-insensitive matching).
 var projectFamilyAllowlist = []string{
 	"test-project-group",
+	"agentic-ai-foundation",
 	// "tazama",
 	// "chiplet",
 	// "cnab",
