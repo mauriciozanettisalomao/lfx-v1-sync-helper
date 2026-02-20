@@ -94,7 +94,7 @@ func calculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 		}
 		return 0
 	})
-	logger.With("meeting_id", meeting.UID, "recurrences", occurrencesPattern).DebugContext(ctx, "list of recurrence patterns")
+	logger.With("meeting_id", meeting.ID, "recurrences", occurrencesPattern).DebugContext(ctx, "list of recurrence patterns")
 
 	var allFollowing bool
 	var currentStartTime = meetingStartTime
@@ -105,7 +105,7 @@ func calculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 	// Loop through all recurrence patterns to generate the occurrences
 	// from each start time to the next recurrence pattern start time.
 	for occurrencePatternIdx, occurrencePattern := range occurrencesPattern {
-		logger.With("meeting_id", meeting.UID, "recurrence", occurrencePattern, "idx", occurrencePatternIdx).DebugContext(ctx, "current recurrence")
+		logger.With("meeting_id", meeting.ID, "recurrence", occurrencePattern, "idx", occurrencePatternIdx).DebugContext(ctx, "current recurrence")
 		// Determine next recurrence start time to know how long recurrence pattern lasts
 		var nextRecurrenceTimeUnix int64
 		if occurrencePatternIdx < len(occurrencesPattern)-1 && occurrencesPattern[occurrencePatternIdx+1].OccurrenceID != "" {
@@ -114,7 +114,7 @@ func calculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 				return nil, fmt.Errorf("failed to convert next recurrence start time %s to int: %w", occurrencesPattern[occurrencePatternIdx+1].OccurrenceID, err)
 			}
 		}
-		logger.With("meeting_id", meeting.UID, "current_recurrence", occurrencePattern, "next_recurrence_start_time_unix", nextRecurrenceTimeUnix, "next_recurrence_start_time", time.Unix(nextRecurrenceTimeUnix, 0).Format(time.RFC3339)).DebugContext(ctx, "next recurrence start time")
+		logger.With("meeting_id", meeting.ID, "current_recurrence", occurrencePattern, "next_recurrence_start_time_unix", nextRecurrenceTimeUnix, "next_recurrence_start_time", time.Unix(nextRecurrenceTimeUnix, 0).Format(time.RFC3339)).DebugContext(ctx, "next recurrence start time")
 
 		// Skip the recurrence pattern if past occurrences are not included
 		// and the next recurrence start time is before the current time, which means
@@ -145,7 +145,7 @@ func calculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 		if len(occurrencesInLog) > 100 {
 			occurrencesInLog = occurrencesInLog[:100]
 		}
-		logger.With("meeting_id", meeting.UID, "start_time", recStartTime, "recurrence_rrule", occurrencePattern.Recurrence, "occurrences", occurrencesInLog).DebugContext(ctx, "rrule calculated occurrences")
+		logger.With("meeting_id", meeting.ID, "start_time", recStartTime, "recurrence_rrule", occurrencePattern.Recurrence, "occurrences", occurrencesInLog).DebugContext(ctx, "rrule calculated occurrences")
 
 		currentStartTime = recStartTime
 		currentDuration = occurrencePattern.Duration
@@ -163,7 +163,7 @@ func calculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 			// Skip this recurrence pattern if the occurrence time
 			// is after the next recurrence start time.
 			if nextRecurrenceTimeUnix != 0 && nextRecurrenceTimeUnix < o.Unix() {
-				logger.With("meeting_id", meeting.UID, "occurrence_id", o.Unix(), "occurrence_start_time", o).DebugContext(ctx, "skip recurrence pattern")
+				logger.With("meeting_id", meeting.ID, "occurrence_id", o.Unix(), "occurrence_start_time", o).DebugContext(ctx, "skip recurrence pattern")
 				break
 			}
 			occurrenceID := strconv.FormatInt(o.Unix(), 10)
@@ -174,7 +174,7 @@ func calculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 				// up in two recurrence patterns that we iterate through.
 				continue
 			}
-			logger.With("meeting_id", meeting.UID, "occurrence_id", occurrenceID, "occurrence_start_time", o).DebugContext(ctx, "current occurrence (as calculated by RRULE, before adjustments)")
+			logger.With("meeting_id", meeting.ID, "occurrence_id", occurrenceID, "occurrence_start_time", o).DebugContext(ctx, "current occurrence (as calculated by RRULE, before adjustments)")
 
 			// Need to check single updated occurrence first then all following updated occurrence
 			// so that the latter gets applied to the following occurrences
@@ -183,7 +183,7 @@ func calculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 			var updateOccSingle UpdatedOccurrence
 			for _, updatedOcc := range meeting.UpdatedOccurrences {
 				if (updatedOcc.OldOccurrenceID == occurrenceID || updatedOcc.NewOccurrenceID == occurrenceID) && updatedOcc.AllFollowing {
-					logger.With("meeting_id", meeting.UID, "occurrence", updatedOcc).DebugContext(ctx, "is an all following updated occurrence")
+					logger.With("meeting_id", meeting.ID, "occurrence", updatedOcc).DebugContext(ctx, "is an all following updated occurrence")
 					isUpdated = true
 					updateOccAllFollowing = updatedOcc
 					allFollowing = true
@@ -199,7 +199,7 @@ func calculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 						return nil, fmt.Errorf("failed to convert updated occurrence start time %s to int: %w", updatedOcc.NewOccurrenceID, err)
 					}
 					currentStartTime = time.Unix(unixStartTime, 0).In(location)
-					logger.With("meeting_id", meeting.UID, "current_start_time", currentStartTime, "occurrence", updatedOcc).DebugContext(ctx, "current start time changed")
+					logger.With("meeting_id", meeting.ID, "current_start_time", currentStartTime, "occurrence", updatedOcc).DebugContext(ctx, "current start time changed")
 				}
 				// We need to check if the updated occurrence record's old or new occurrence ID matches the currently iterated
 				// occurrence ID. But also it's possible that there was an all_following=true updated occurrence record that
@@ -208,7 +208,7 @@ func calculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 				isUpdatedSingle := (updatedOcc.OldOccurrenceID == occurrenceID || updatedOcc.NewOccurrenceID == occurrenceID) && !updatedOcc.AllFollowing
 				isUpdatedSingle = isUpdatedSingle || ((updatedOcc.OldOccurrenceID == updateOccAllFollowing.NewOccurrenceID || updatedOcc.NewOccurrenceID == updateOccAllFollowing.NewOccurrenceID) && allFollowing)
 				if isUpdatedSingle {
-					logger.With("meeting_id", meeting.UID, "occurrence", updatedOcc).DebugContext(ctx, "is a single updated occurrence")
+					logger.With("meeting_id", meeting.ID, "occurrence", updatedOcc).DebugContext(ctx, "is a single updated occurrence")
 					isUpdated = true
 					updateOccSingle = updatedOcc
 				}
@@ -217,10 +217,10 @@ func calculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 			if updateOccAllFollowing != (UpdatedOccurrence{}) || updateOccSingle != (UpdatedOccurrence{}) {
 				var updatedOcc UpdatedOccurrence
 				if updateOccSingle != (UpdatedOccurrence{}) {
-					logger.With("meeting_id", meeting.UID, "occurrence", updateOccSingle).DebugContext(ctx, "single updated occurrence")
+					logger.With("meeting_id", meeting.ID, "occurrence", updateOccSingle).DebugContext(ctx, "single updated occurrence")
 					updatedOcc = updateOccSingle
 				} else {
-					logger.With("meeting_id", meeting.UID, "occurrence", updateOccAllFollowing).DebugContext(ctx, "all following updated occurrence")
+					logger.With("meeting_id", meeting.ID, "occurrence", updateOccAllFollowing).DebugContext(ctx, "all following updated occurrence")
 					updatedOcc = updateOccAllFollowing
 				}
 
@@ -236,7 +236,7 @@ func calculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 				}
 
 				if !pastOccurrences && isOccurrencePast(time.Unix(unixStartTime, 0), updatedOcc.Duration) {
-					logger.With("meeting_id", meeting.UID, "occurrence_id", o.Unix(), "occurrence_start_time", o).DebugContext(ctx, "skipping updated occurrence because it is a past occurrence")
+					logger.With("meeting_id", meeting.ID, "occurrence_id", o.Unix(), "occurrence_start_time", o).DebugContext(ctx, "skipping updated occurrence because it is a past occurrence")
 					continue
 				}
 
@@ -276,18 +276,18 @@ func calculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 
 				previousOccurrence = occurrenceObj // set new previous occurrence
 				previousOldOccurrenceID = updatedOcc.OldOccurrenceID
-				logger.With("meeting_id", meeting.UID, "occurrence", occurrenceObj).DebugContext(ctx, "adding updated occurrence")
+				logger.With("meeting_id", meeting.ID, "occurrence", occurrenceObj).DebugContext(ctx, "adding updated occurrence")
 				result = append(result, occurrenceObj)
 				// Return list of occurrences once the specific number of occurrences to return has been reached
 				if len(result) == numOccurrencesToReturn {
-					logger.With("meeting_id", meeting.UID, "time_elapsed_microseconds", time.Since(timerNow).Microseconds(), "num_occurrences", len(result)).DebugContext(ctx, "calculated meeting occurrences list")
+					logger.With("meeting_id", meeting.ID, "time_elapsed_microseconds", time.Since(timerNow).Microseconds(), "num_occurrences", len(result)).DebugContext(ctx, "calculated meeting occurrences list")
 					return result, nil
 				}
 			}
 
 			// If occurrence is an updated occurrence then it was already included
 			if isUpdated {
-				logger.With("meeting_id", meeting.UID, "occurrence_id", o.Unix(), "occurrence_start_time", o).DebugContext(ctx, "occurrence already added")
+				logger.With("meeting_id", meeting.ID, "occurrence_id", o.Unix(), "occurrence_start_time", o).DebugContext(ctx, "occurrence already added")
 				continue
 			}
 
@@ -295,7 +295,7 @@ func calculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 			if allFollowing && !currentStartTime.IsZero() {
 				actualStartTime = time.Date(o.Year(), o.Month(), o.Day(), currentStartTime.Hour(), currentStartTime.Minute(), currentStartTime.Second(), 0, location).UTC().Format(time.RFC3339)
 			}
-			logger.With("meeting_id", meeting.UID, "adjusted_start_time", actualStartTime, "orig_start_time", o.Format(time.RFC3339), "is_adjusted", allFollowing && !currentStartTime.IsZero()).DebugContext(ctx, "occurrence after adjusting start time")
+			logger.With("meeting_id", meeting.ID, "adjusted_start_time", actualStartTime, "orig_start_time", o.Format(time.RFC3339), "is_adjusted", allFollowing && !currentStartTime.IsZero()).DebugContext(ctx, "occurrence after adjusting start time")
 			// Use meeting duration unless this occurrence is part of an updated occurrence recurrence with a set duration
 			actualDuration := meeting.Duration
 			if allFollowing && currentDuration != 0 {
@@ -304,7 +304,7 @@ func calculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 
 			// Skip past occurrences if no past occurrences are expected
 			if !pastOccurrences && isOccurrencePast(o, actualDuration) {
-				logger.With("meeting_id", meeting.UID, "occurrence_id", o.Unix(), "occurrence_start_time", o).DebugContext(ctx, "skipping past occurrence")
+				logger.With("meeting_id", meeting.ID, "occurrence_id", o.Unix(), "occurrence_start_time", o).DebugContext(ctx, "skipping past occurrence")
 				continue
 			}
 
@@ -333,16 +333,16 @@ func calculateOccurrences(ctx context.Context, meeting meetingInput, pastOccurre
 				occurrenceObj.IsCancelled = true
 			}
 			previousOccurrence = occurrenceObj // set new previous occurrence
-			logger.With("meeting_id", meeting.UID, "occurrence", occurrenceObj).DebugContext(ctx, "adding occurrence to list of occurrences")
+			logger.With("meeting_id", meeting.ID, "occurrence", occurrenceObj).DebugContext(ctx, "adding occurrence to list of occurrences")
 			result = append(result, occurrenceObj)
 			// Return list of occurrences once the specific number of occurrences to return has been reached
 			if len(result) == numOccurrencesToReturn {
-				logger.With("meeting_id", meeting.UID, "elapsed_time", time.Since(timerNow).String(), "num_occurrences", len(result)).DebugContext(ctx, "calculated meeting occurrences list")
+				logger.With("meeting_id", meeting.ID, "elapsed_time", time.Since(timerNow).String(), "num_occurrences", len(result)).DebugContext(ctx, "calculated meeting occurrences list")
 				return result, nil
 			}
 		}
 	}
-	logger.With("meeting_id", meeting.UID, "elapsed_time", time.Since(timerNow).String(), "num_occurrences", len(result)).DebugContext(ctx, "calculated meeting occurrences list")
+	logger.With("meeting_id", meeting.ID, "elapsed_time", time.Since(timerNow).String(), "num_occurrences", len(result)).DebugContext(ctx, "calculated meeting occurrences list")
 
 	return result, nil
 }
