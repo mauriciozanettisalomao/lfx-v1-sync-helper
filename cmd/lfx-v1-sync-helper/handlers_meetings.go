@@ -835,6 +835,7 @@ func convertMapToInputPastMeeting(ctx context.Context, v1Data map[string]any) (*
 	// We need to populate the ID for the v2 system
 	if meetingAndOccurrenceID, ok := v1Data["meeting_and_occurrence_id"].(string); ok && meetingAndOccurrenceID != "" {
 		pastMeeting.MeetingAndOccurrenceID = meetingAndOccurrenceID
+		pastMeeting.ID = meetingAndOccurrenceID
 	}
 
 	if meetingID, ok := v1Data["meeting_id"].(string); ok && meetingID != "" {
@@ -1863,7 +1864,7 @@ func convertMapToInputPastMeetingSummary(v1Data map[string]any) (*pastMeetingSum
 	}
 
 	if summaryID, ok := v1Data["id"].(string); ok && summaryID != "" {
-		summary.UID = summaryID
+		summary.ID = summaryID
 	}
 	if pastMeetingUID, ok := v1Data["meeting_and_occurrence_id"].(string); ok && pastMeetingUID != "" {
 		summary.MeetingAndOccurrenceID = pastMeetingUID
@@ -1927,8 +1928,8 @@ func convertMapToInputPastMeetingSummary(v1Data map[string]any) (*pastMeetingSum
 
 func getPastMeetingSummaryTags(summary *pastMeetingSummaryInput) []string {
 	tags := []string{
-		summary.UID,
-		fmt.Sprintf("past_meeting_summary_uid:%s", summary.UID),
+		summary.ID,
+		fmt.Sprintf("past_meeting_summary_id:%s", summary.ID),
 		fmt.Sprintf("meeting_and_occurrence_id:%s", summary.MeetingAndOccurrenceID),
 		fmt.Sprintf("meeting_id:%s", summary.MeetingID),
 		"platform:Zoom",
@@ -1957,7 +1958,7 @@ func handleZoomPastMeetingSummaryUpdate(ctx context.Context, key string, v1Data 
 	}
 
 	// Extract the UID (ID)
-	uid := summaryInput.UID
+	uid := summaryInput.ID
 	if uid == "" {
 		funcLogger.ErrorContext(ctx, "missing id in past meeting summary data")
 		return
