@@ -172,9 +172,19 @@ func handleDynamoDBUpsert(ctx context.Context, event *DynamoDBStreamEvent) bool 
 }
 
 // handleDynamoDBRemove hard-deletes the KV entry for a REMOVE event.
-// Returns true only on a KV revision mismatch that warrants a retry.
+// When old_image is available it is routed through handleKVSoftDelete so that
+// handlers receive the full record data (e.g. meeting_id, username, host for
+// registrants). The KV hard-delete still runs afterward; handlers guard against
+// double-processing via tombstone checks.
+// Returns true only on an error that warrants a retry.
 func handleDynamoDBRemove(ctx context.Context, event *DynamoDBStreamEvent) bool {
 	key := dynamodbKVKey(event.TableName, event.Keys)
+
+	if len(event.OldImage) > 0 {
+		if retry := handleKVSoftDelete(ctx, key, event.OldImage); retry {
+			return true
+		}
+	}
 
 	if err := v1KV.Delete(ctx, key); err != nil && err != jetstream.ErrKeyNotFound {
 		logger.With(errKey, err, "key", key).ErrorContext(ctx, "failed to delete KV entry from DynamoDB REMOVE event")
