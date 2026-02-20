@@ -325,11 +325,8 @@ type Committee struct {
 
 // meetingInput represents input data for creating or updating meetings.
 type meetingInput struct {
-	// UID is the meeting ID (can be a UUID or numeric ID)
-	UID string `json:"uid"`
-
-	// MeetingID is the numeric Zoom meeting ID
-	MeetingID string `json:"meeting_id"`
+	// ID is the meeting ID (can be a UUID or numeric ID)
+	ID string `json:"id"`
 
 	// ProjectSFID is the salesforce ID of the LF project
 	ProjectSFID string `json:"project_sfid"`
@@ -542,7 +539,7 @@ func (m meetingInput) MarshalJSON() ([]byte, error) {
 // This struct is large, so only the 7 fields that need flexible type handling are listed as interface{}.
 func (m *meetingInput) UnmarshalJSON(data []byte) error {
 	tmp := struct {
-		UID                                       string                  `json:"uid"`
+		ID                                        string                  `json:"id"`
 		MeetingID                                 string                  `json:"meeting_id"`
 		ProjectSFID                               string                  `json:"project_sfid"`
 		ProjectUID                                string                  `json:"project_uid"`
@@ -742,8 +739,7 @@ func (m *meetingInput) UnmarshalJSON(data []byte) error {
 	}
 
 	// Assign all other fields
-	m.UID = tmp.UID
-	m.MeetingID = tmp.MeetingID
+	m.ID = tmp.ID
 	m.ProjectSFID = tmp.ProjectSFID
 	m.ProjectUID = tmp.ProjectUID
 	m.Committee = tmp.Committee
@@ -865,9 +861,9 @@ type registrantInput struct {
 	// UID is the partition key of the registrant (it is a UUID)
 	UID string `json:"uid"` // v2 attribute
 
-	// MeetingUID is the UID of the meeting that the registrant is associated with.
+	// MeetingID is the ID of the meeting that the registrant is associated with.
 	// It is a Global Secondary Index on the registrant table.
-	MeetingUID string `json:"meeting_uid"`
+	MeetingID string `json:"meeting_id"`
 
 	// Type is the type of registrant
 	Type string `json:"type"`
@@ -1059,9 +1055,9 @@ type inviteResponseInput struct {
 
 // pastMeetingInput represents input data for past meeting records.
 type pastMeetingInput struct {
-	// UID is the partition key of the past meeting table
+	// MeetingAndOccurrenceID is the partition key of the past meeting table
 	// This is a v2 attribute
-	UID string `json:"uid"`
+	MeetingAndOccurrenceID string `json:"meeting_and_occurrence_id"`
 
 	// ProjectID is the ID of the salesforce (v1) project associated with the past meeting
 	ProjectSFID string `json:"proj_id"`
@@ -1090,8 +1086,8 @@ type pastMeetingInput struct {
 	// Duration is the duration of the past meeting
 	Duration int `json:"-"`
 
-	// MeetingUID is the UID of the meeting associated with the past meeting
-	MeetingUID string `json:"meeting_uid"`
+	// MeetingID is the ID of the meeting associated with the past meeting
+	MeetingID string `json:"meeting_id"`
 
 	// OccurrenceID is the ID of the occurrence associated with the past meeting
 	OccurrenceID string `json:"occurrence_id"`
@@ -1603,24 +1599,24 @@ type ZoomPastMeetingAttendeeSession struct {
 
 // V2PastMeetingParticipant is the schema for a past meeting participant in the v2 system.
 type V2PastMeetingParticipant struct {
-	UID                string               `json:"uid"`
-	PastMeetingUID     string               `json:"past_meeting_uid"`
-	MeetingUID         string               `json:"meeting_uid"`
-	Email              string               `json:"email"`
-	FirstName          string               `json:"first_name"`
-	LastName           string               `json:"last_name"`
-	Host               bool                 `json:"host"`
-	JobTitle           string               `json:"job_title,omitempty"`
-	OrgName            string               `json:"org_name,omitempty"`
-	OrgIsMember        bool                 `json:"org_is_member"`
-	OrgIsProjectMember bool                 `json:"org_is_project_member"`
-	AvatarURL          string               `json:"avatar_url,omitempty"`
-	Username           string               `json:"username,omitempty"`
-	IsInvited          bool                 `json:"is_invited"`
-	IsAttended         bool                 `json:"is_attended"`
-	Sessions           []ParticipantSession `json:"sessions,omitempty"`
-	CreatedAt          *time.Time           `json:"created_at,omitempty"`
-	UpdatedAt          *time.Time           `json:"updated_at,omitempty"`
+	UID                    string               `json:"uid"`
+	MeetingAndOccurrenceID string               `json:"meeting_and_occurrence_id"`
+	MeetingID              string               `json:"meeting_id"`
+	Email                  string               `json:"email"`
+	FirstName              string               `json:"first_name"`
+	LastName               string               `json:"last_name"`
+	Host                   bool                 `json:"host"`
+	JobTitle               string               `json:"job_title,omitempty"`
+	OrgName                string               `json:"org_name,omitempty"`
+	OrgIsMember            bool                 `json:"org_is_member"`
+	OrgIsProjectMember     bool                 `json:"org_is_project_member"`
+	AvatarURL              string               `json:"avatar_url,omitempty"`
+	Username               string               `json:"username,omitempty"`
+	IsInvited              bool                 `json:"is_invited"`
+	IsAttended             bool                 `json:"is_attended"`
+	Sessions               []ParticipantSession `json:"sessions,omitempty"`
+	CreatedAt              *time.Time           `json:"created_at,omitempty"`
+	UpdatedAt              *time.Time           `json:"updated_at,omitempty"`
 }
 
 // ParticipantSession represents a single join/leave session of a participant in a meeting
@@ -1634,13 +1630,13 @@ type ParticipantSession struct {
 
 // pastMeetingRecordingInput is the schema for a past meeting recording in DynamoDB.
 type pastMeetingRecordingInput struct {
-	// UID is the recording record UID in the v2 system.
-	// It is the same as the [PastMeetingUID] field, but with the json tag to match what the v2 system expects.
-	UID string `json:"uid"`
+	// ID is the recording record ID in the v2 system.
+	// It is the same as the [MeetingAndOccurrenceID] field, but with the json tag to match what the v2 system expects.
+	ID string `json:"id"`
 
-	// PastMeetingUID is the ID of the past meeting associated with the recording.
+	// MeetingAndOccurrenceID is the ID of the past meeting associated with the recording.
 	// This is the primary key of the recording table since there is only one recording record for a past meeting.
-	PastMeetingUID string `json:"past_meeting_uid"`
+	MeetingAndOccurrenceID string `json:"meeting_and_occurrence_id"`
 
 	// ProjectUID is the ID of the project associated with the recording.
 	ProjectUID string `json:"project_uid"`
@@ -1654,8 +1650,8 @@ type pastMeetingRecordingInput struct {
 	// HostID is the Zoom user ID of the host of the recorded meeting. This comes from Zoom.
 	HostID string `json:"host_id"`
 
-	// MeetingUID is the UID of the meeting associated with the recording.
-	MeetingUID string `json:"meeting_uid"`
+	// MeetingID is the ID of the meeting associated with the recording.
+	MeetingID string `json:"meeting_id"`
 
 	// OccurrenceID is the ID of the occurrence associated with the recording.
 	OccurrenceID string `json:"occurrence_id"`
@@ -1815,12 +1811,12 @@ type pastMeetingSummaryInput struct {
 	// This is a v2 only attribute, whose value is the same as the v1 id field.
 	UID string `json:"uid"`
 
-	// PastMeetingUID is the ID of the past meeting associated with the summary.
+	// MeetingAndOccurrenceID is the ID of the past meeting associated with the summary.
 	// This is a v2 only attribute, whose value is the same as the [MeetingAndOccurrenceID] field.
-	PastMeetingUID string `json:"past_meeting_uid"`
+	MeetingAndOccurrenceID string `json:"meeting_and_occurrence_id"`
 
 	// MeetingID is the ID of the meeting associated with the summary.
-	MeetingUID string `json:"meeting_uid"`
+	MeetingID string `json:"meeting_id"`
 
 	// OccurrenceID is the ID of the occurrence associated with the summary.
 	OccurrenceID string `json:"occurrence_id"`
