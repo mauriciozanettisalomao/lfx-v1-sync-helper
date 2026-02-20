@@ -411,6 +411,16 @@ func handleMeetingTypeDelete(ctx context.Context, key, id string, message []byte
 // handleZoomMeetingDelete processes a deletion of an itx-zoom-meetings-v2 record.
 // Returns true if the operation should be retried, false otherwise.
 func handleZoomMeetingDelete(ctx context.Context, key string, meetingID string) bool {
+	funcLogger := logger.With("key", key, "meeting_id", meetingID)
+
+	// Skip if already tombstoned — prevents double processing when the DynamoDB path
+	// has already handled the delete before the KV watcher fires.
+	mappingKey := fmt.Sprintf("v1_meetings.%s", meetingID)
+	if entry, err := mappingsKV.Get(ctx, mappingKey); err == nil && isTombstonedMapping(entry.Value()) {
+		funcLogger.DebugContext(ctx, "meeting delete already processed, skipping")
+		return false
+	}
+
 	return handleMeetingTypeDelete(ctx, key, meetingID, []byte(meetingID), meetingDeleteConfig{
 		indexerSubject:         IndexV1MeetingSubject,
 		deleteAllAccessSubject: DeleteAllAccessV1MeetingSubject,
@@ -441,17 +451,17 @@ func handleZoomMeetingRegistrantDelete(ctx context.Context, key string, registra
 
 	meetingID, ok := v1Data["meeting_id"].(string)
 	if !ok {
-		funcLogger.WarnContext(ctx, "missing or invalid meeting_id in v1Data, falling back to registrantID only")
+		funcLogger.WarnContext(ctx, "missing or invalid meeting_id in v1Data, using empty value")
 		meetingID = ""
 	}
 	username, ok := v1Data["username"].(string)
 	if !ok {
-		funcLogger.WarnContext(ctx, "missing or invalid username in v1Data, falling back to registrantID only")
+		funcLogger.WarnContext(ctx, "missing or invalid username in v1Data, using empty value")
 		username = ""
 	}
 	host, ok := v1Data["host"].(bool)
 	if !ok {
-		funcLogger.WarnContext(ctx, "missing or invalid host in v1Data, falling back to registrantID only")
+		funcLogger.WarnContext(ctx, "missing or invalid host in v1Data, using false")
 		host = false
 	}
 	accessMsg := MeetingRegistrantAccessMessage{
