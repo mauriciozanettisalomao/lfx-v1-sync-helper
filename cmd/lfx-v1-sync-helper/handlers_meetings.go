@@ -871,6 +871,25 @@ func getInviteResponseTags(inviteResponse *inviteResponseInput) []string {
 	return tags
 }
 
+// handleZoomMeetingInviteResponseDelete processes a deletion of an itx-zoom-meetings-invite-responses-v2 record.
+// Returns true if the operation should be retried, false otherwise.
+func handleZoomMeetingInviteResponseDelete(ctx context.Context, key string, inviteResponseID string) bool {
+	funcLogger := logger.With("key", key, "invite_response_id", inviteResponseID)
+
+	// Skip if already tombstoned — prevents double processing when the DynamoDB path
+	// has already handled the delete before the KV watcher fires.
+	mappingKey := fmt.Sprintf("v1_invite_responses.%s", inviteResponseID)
+	if entry, err := mappingsKV.Get(ctx, mappingKey); err == nil && isTombstonedMapping(entry.Value()) {
+		funcLogger.DebugContext(ctx, "invite response delete already processed, skipping")
+		return false
+	}
+
+	return handleMeetingTypeDelete(ctx, key, inviteResponseID, []byte(inviteResponseID), meetingDeleteConfig{
+		indexerSubject:   IndexV1MeetingInviteResponseSubject,
+		tombstoneKeyFmts: []string{"v1_invite_responses.%s"},
+	})
+}
+
 // handleZoomMeetingInviteResponseUpdate processes a zoom meeting invite response update from itx-zoom-meetings-invite-responses-v2 records.
 // Returns true if the operation should be retried, false otherwise.
 func handleZoomMeetingInviteResponseUpdate(ctx context.Context, key string, v1Data map[string]any) bool {
