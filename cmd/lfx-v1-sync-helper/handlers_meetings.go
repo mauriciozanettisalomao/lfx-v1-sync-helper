@@ -63,6 +63,9 @@ const (
 	// V1PastMeetingParticipantPutSubject is the subject for the v1 past meeting participant access control updates.
 	V1PastMeetingParticipantPutSubject = "lfx.put_participant.v1_past_meeting"
 
+	// V1PastMeetingParticipantRemoveSubject is the subject for removing a v1 past meeting participant's access.
+	V1PastMeetingParticipantRemoveSubject = "lfx.remove_participant.v1_past_meeting"
+
 	// IndexV1PastMeetingRecordingSubject is the subject for the v1 past meeting recording indexing.
 	IndexV1PastMeetingRecordingSubject = "lfx.index.v1_past_meeting_recording"
 
@@ -432,7 +435,7 @@ func handleZoomMeetingDelete(ctx context.Context, key string, meetingID string) 
 }
 
 // handleZoomMeetingRegistrantDelete processes a deletion of an itx-zoom-meetings-registrants-v2 record.
-// v1Data should be the old_image from the source event when available; nil falls back to sending registrantID only.
+// v1Data should be the old_image from the source event when available; nil skips processing entirely.
 // Returns true if the operation should be retried, false otherwise.
 func handleZoomMeetingRegistrantDelete(ctx context.Context, key string, registrantID string, v1Data map[string]any) bool {
 	funcLogger := logger.With("key", key, "registrant_id", registrantID)
@@ -1709,6 +1712,67 @@ func handleZoomPastMeetingAttendeeUpdate(ctx context.Context, key string, v1Data
 
 	funcLogger.InfoContext(ctx, "successfully sent attendee indexer and access messages")
 	return false
+}
+
+// handleZoomPastMeetingAttendeeDelete processes a deletion of an itx-zoom-past-meetings-attendees record.
+// v1Data should be the old_image from the source event when available; nil skips processing entirely.
+// Returns true if the operation should be retried, false otherwise.
+func handleZoomPastMeetingAttendeeDelete(ctx context.Context, key string, attendeeID string, v1Data map[string]any) bool {
+	funcLogger := logger.With("key", key, "attendee_id", attendeeID)
+
+	// Skip if already tombstoned — prevents double processing when the DynamoDB path
+	// has already handled the delete before the KV watcher fires.
+	mappingKey := fmt.Sprintf("v1_past_meeting_attendees.%s", attendeeID)
+	if entry, err := mappingsKV.Get(ctx, mappingKey); err == nil && isTombstonedMapping(entry.Value()) {
+		funcLogger.DebugContext(ctx, "attendee delete already processed, skipping")
+		return false
+	}
+
+	if v1Data == nil {
+		funcLogger.WarnContext(ctx, "no v1Data available for attendee delete, skipping")
+		return false
+	}
+
+	// Extract meeting_and_occurrence_id - return early if missing, consistent with update handler.
+	meetingAndOccurrenceID, ok := v1Data["meeting_and_occurrence_id"].(string)
+	if !ok || meetingAndOccurrenceID == "" {
+		funcLogger.ErrorContext(ctx, "missing or invalid meeting_and_occurrence_id in v1Data for attendee delete")
+		return false
+	}
+	funcLogger = funcLogger.With("meeting_and_occurrence_id", meetingAndOccurrenceID)
+
+	// Extract username (lf_sso) field.
+	username, _ := v1Data["lf_sso"].(string)
+
+	var message []byte
+	var deleteAllAccessSubject string
+
+	// Only construct and send the access message if username is present, consistent with update handler.
+	// Without a username, access control cannot identify which user to remove access for.
+	if username != "" {
+		accessMsg := PastMeetingParticipantAccessMessage{
+			MeetingAndOccurrenceID: meetingAndOccurrenceID,
+			Username:               mapUsernameToAuthSub(username),
+			IsAttended:             true,
+		}
+		var err error
+		if message, err = json.Marshal(accessMsg); err != nil {
+			funcLogger.With(errKey, err).ErrorContext(ctx, "failed to marshal attendee access message")
+			return false
+		}
+		deleteAllAccessSubject = V1PastMeetingParticipantRemoveSubject
+	} else {
+		// No username - skip access control message (cannot identify user without username).
+		funcLogger.DebugContext(ctx, "no username in v1Data, skipping access control message for attendee delete")
+		message = []byte(attendeeID)
+		deleteAllAccessSubject = "" // Empty string skips access control message
+	}
+
+	return handleMeetingTypeDelete(ctx, key, attendeeID, message, meetingDeleteConfig{
+		indexerSubject:         IndexV1PastMeetingParticipantSubject,
+		deleteAllAccessSubject: deleteAllAccessSubject,
+		tombstoneKeyFmts:       []string{"v1_past_meeting_attendees.%s"},
+	})
 }
 
 func convertAttendeeToV2Participant(attendee *pastMeetingAttendeeInput, isHost bool, isRegistrant bool) (*V2PastMeetingParticipant, error) {
