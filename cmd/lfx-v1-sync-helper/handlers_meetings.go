@@ -60,8 +60,9 @@ const (
 	// V1PastMeetingParticipantPutSubject is the subject for the v1 past meeting participant access control updates.
 	V1PastMeetingParticipantPutSubject = "lfx.put_participant.v1_past_meeting"
 
-	// V1PastMeetingParticipantRemoveSubject is the subject for removing a v1 past meeting participant's access.
-	V1PastMeetingParticipantRemoveSubject = "lfx.remove_participant.v1_past_meeting"
+	// V1PastMeetingParticipantRemoveSubject is the NATS subject for removing a v1 past meeting participant's access.
+	// Not a secret — gitleaks false positive due to variable name and string entropy.
+	V1PastMeetingParticipantRemoveSubject = "lfx.remove_participant.v1_past_meeting" // gitleaks:allow
 
 	// IndexV1PastMeetingRecordingSubject is the subject for the v1 past meeting recording indexing.
 	IndexV1PastMeetingRecordingSubject = "lfx.index.v1_past_meeting_recording"
