@@ -432,7 +432,7 @@ func handleZoomMeetingDelete(ctx context.Context, key string, meetingID string) 
 }
 
 // handleZoomMeetingRegistrantDelete processes a deletion of an itx-zoom-meetings-registrants-v2 record.
-// v1Data should be the old_image from the source event when available; nil falls back to sending registrantID only.
+// v1Data should be the old_image from the source event when available; nil skips processing entirely.
 // Returns true if the operation should be retried, false otherwise.
 func handleZoomMeetingRegistrantDelete(ctx context.Context, key string, registrantID string, v1Data map[string]any) bool {
 	funcLogger := logger.With("key", key, "registrant_id", registrantID)
@@ -1673,7 +1673,7 @@ func handleZoomPastMeetingAttendeeUpdate(ctx context.Context, key string, v1Data
 }
 
 // handleZoomPastMeetingAttendeeDelete processes a deletion of an itx-zoom-past-meetings-attendees record.
-// v1Data should be the old_image from the source event when available; nil falls back to sending attendeeID only.
+// v1Data should be the old_image from the source event when available; nil skips processing entirely.
 // Returns true if the operation should be retried, false otherwise.
 func handleZoomPastMeetingAttendeeDelete(ctx context.Context, key string, attendeeID string, v1Data map[string]any) bool {
 	funcLogger := logger.With("key", key, "attendee_id", attendeeID)
@@ -1703,7 +1703,7 @@ func handleZoomPastMeetingAttendeeDelete(ctx context.Context, key string, attend
 	username, _ := v1Data["lf_sso"].(string)
 
 	var message []byte
-	var deleteAccessSubject string
+	var deleteAllAccessSubject string
 
 	// Only construct and send the access message if username is present, consistent with update handler.
 	// Without a username, access control cannot identify which user to remove access for.
@@ -1718,17 +1718,17 @@ func handleZoomPastMeetingAttendeeDelete(ctx context.Context, key string, attend
 			funcLogger.With(errKey, err).ErrorContext(ctx, "failed to marshal attendee access message")
 			return false
 		}
-		deleteAccessSubject = V1PastMeetingParticipantRemoveSubject
+		deleteAllAccessSubject = V1PastMeetingParticipantRemoveSubject
 	} else {
 		// No username - skip access control message (cannot identify user without username).
 		funcLogger.DebugContext(ctx, "no username in v1Data, skipping access control message for attendee delete")
 		message = []byte(attendeeID)
-		deleteAccessSubject = "" // Empty string skips access control message
+		deleteAllAccessSubject = "" // Empty string skips access control message
 	}
 
 	return handleMeetingTypeDelete(ctx, key, attendeeID, message, meetingDeleteConfig{
 		indexerSubject:         IndexV1PastMeetingParticipantSubject,
-		deleteAllAccessSubject: deleteAccessSubject,
+		deleteAllAccessSubject: deleteAllAccessSubject,
 		tombstoneKeyFmts:       []string{"v1_past_meeting_attendees.%s"},
 	})
 }
