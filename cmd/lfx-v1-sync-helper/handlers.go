@@ -215,6 +215,8 @@ func handleResourceDelete(ctx context.Context, key string, v1Principal string, v
 		return handleZoomMeetingRegistrantDelete(ctx, key, sfid, v1Data)
 	case "itx-zoom-past-meetings":
 		return handleZoomPastMeetingDelete(ctx, key, sfid)
+	case "itx-zoom-meetings-invite-responses-v2":
+		return handleZoomMeetingInviteResponseDelete(ctx, key, sfid)
 	case "itx-zoom-meetings-mappings-v2",
 		"itx-zoom-past-meetings-attendees",
 		"itx-zoom-past-meetings-invitees",
