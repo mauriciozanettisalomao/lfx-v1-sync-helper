@@ -48,6 +48,9 @@ const (
 	// DeleteAllAccessV1MeetingSubject is the subject for deleting all access control entries for a v1 meeting.
 	DeleteAllAccessV1MeetingSubject = "lfx.delete_all_access.v1_meeting"
 
+	// DeleteAllAccessV1PastMeetingSubject is the subject for deleting all access control entries for a v1 past meeting.
+	DeleteAllAccessV1PastMeetingSubject = "lfx.delete_all_access.v1_past_meeting"
+
 	// IndexV1PastMeetingSubject is the subject for the v1 past meeting indexing.
 	IndexV1PastMeetingSubject = "lfx.index.v1_past_meeting"
 
@@ -1177,6 +1180,26 @@ func handleZoomPastMeetingUpdate(ctx context.Context, key string, v1Data map[str
 	}
 
 	funcLogger.InfoContext(ctx, "successfully sent past meeting indexer and access messages")
+}
+
+// handleZoomPastMeetingDelete processes a deletion of an itx-zoom-past-meetings record.
+// Returns true if the operation should be retried, false otherwise.
+func handleZoomPastMeetingDelete(ctx context.Context, key string, meetingAndOccurrenceID string) bool {
+	funcLogger := logger.With("key", key, "meeting_and_occurrence_id", meetingAndOccurrenceID)
+
+	// Skip if already tombstoned — prevents double processing when the DynamoDB path
+	// has already handled the delete before the KV watcher fires.
+	mappingKey := fmt.Sprintf("v1_past_meetings.%s", meetingAndOccurrenceID)
+	if entry, err := mappingsKV.Get(ctx, mappingKey); err == nil && isTombstonedMapping(entry.Value()) {
+		funcLogger.DebugContext(ctx, "past meeting delete already processed, skipping")
+		return false
+	}
+
+	return handleMeetingTypeDelete(ctx, key, meetingAndOccurrenceID, []byte(meetingAndOccurrenceID), meetingDeleteConfig{
+		indexerSubject:         IndexV1PastMeetingSubject,
+		deleteAllAccessSubject: DeleteAllAccessV1PastMeetingSubject,
+		tombstoneKeyFmts:       []string{"v1_past_meetings.%s", "v1-mappings.past-meeting-mappings.%s"},
+	})
 }
 
 // convertMapToInputPastMeetingMapping converts a map[string]any to a ZoomPastMeetingMappingDB struct.
