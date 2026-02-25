@@ -1507,7 +1507,7 @@ func handleZoomPastMeetingInviteeUpdate(ctx context.Context, key string, v1Data 
 			Username:               authSub,
 			Host:                   isHost,
 			IsInvited:              true,
-			IsAttended:             false, // TODO: we need to ensure that the invitee event is handled before the attendee event so that this value doesn't get reset if the order is reversed
+			IsAttended:             v2Participant.IsAttended,
 		}
 
 		accessMsgBytes, err := json.Marshal(accessMsg)
@@ -1780,7 +1780,7 @@ func handleZoomPastMeetingAttendeeDelete(ctx context.Context, key string, attend
 		inviteeXrefKey := fmt.Sprintf("v1_participant_by_meeting_user.invitee.%s.%s", meetingAndOccurrenceID, username)
 		if entry, err := mappingsKV.Get(ctx, inviteeXrefKey); err == nil && !isTombstonedMapping(entry.Value()) {
 			funcLogger.DebugContext(ctx, "participant has active invitee record; applying partial delete (is_attended=false, not removing from V2)")
-			return handleZoomPastMeetingPartialAttendeeDelete(ctx, funcLogger, attendeeID, meetingAndOccurrenceID, username, v1Data)
+			return handleZoomPastMeetingPartialAttendeeDelete(ctx, funcLogger, attendeeID, string(entry.Value()), meetingAndOccurrenceID, username)
 		}
 	}
 
@@ -1827,18 +1827,39 @@ func handleZoomPastMeetingAttendeeDelete(ctx context.Context, key string, attend
 // participant still has an active invitee record in V2. Rather than removing the participant from
 // the index and openfga entirely, it sends an UPDATE with is_attended=false so the participant
 // remains in V2 with the correct flags.
-func handleZoomPastMeetingPartialAttendeeDelete(ctx context.Context, funcLogger *slog.Logger, attendeeID, meetingAndOccurrenceID, username string, v1Data map[string]any) bool {
-	attendee, err := convertMapToInputPastMeetingAttendee(v1Data)
-	if err != nil {
-		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to convert v1Data for partial attendee delete")
-		return false // non-retriable; best effort
-	}
-	v2Participant, err := convertAttendeeToV2Participant(attendee, false, false)
-	if err != nil {
-		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to build V2 participant for partial attendee delete")
+// inviteeID is the ID of the surviving invitee record, used to fetch the authoritative data.
+func handleZoomPastMeetingPartialAttendeeDelete(ctx context.Context, funcLogger *slog.Logger, attendeeID, inviteeID, meetingAndOccurrenceID, username string) bool {
+	// Build the V2 participant from the surviving invitee record so unrelated fields are not
+	// overwritten with stale attendee data.
+	inviteeData, exists, err := getV1ObjectData(ctx, fmt.Sprintf("itx-zoom-past-meetings-invitees.%s", inviteeID))
+	if err != nil || !exists {
+		funcLogger.With(errKey, err).WarnContext(ctx, "failed to fetch invitee data for partial attendee delete; skipping")
 		return false
 	}
-	// Override flags: the attendee record is gone but the invitee record remains.
+	invitee, err := convertMapToInputPastMeetingInvitee(inviteeData)
+	if err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to convert invitee data for partial attendee delete")
+		return false
+	}
+	// Re-derive isHost from the registrant record, same as the invitee upsert handler.
+	isHost := false
+	if invitee.RegistrantID != "" {
+		registrantKey := fmt.Sprintf("itx-zoom-meetings-registrants-v2.%s", invitee.RegistrantID)
+		registrantData, regExists, regErr := getV1ObjectData(ctx, registrantKey)
+		if regErr != nil {
+			funcLogger.With(errKey, regErr, "registrant_id", invitee.RegistrantID).WarnContext(ctx, "failed to get registrant data for partial attendee delete")
+		} else if regExists {
+			if hostValue, ok := registrantData["host"].(bool); ok {
+				isHost = hostValue
+			}
+		}
+	}
+	v2Participant, err := convertInviteeToV2Participant(invitee, isHost)
+	if err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to build V2 participant from invitee data for partial attendee delete")
+		return false
+	}
+	// The attendee record is gone; the invitee record remains.
 	v2Participant.IsAttended = false
 	v2Participant.IsInvited = true
 
@@ -1917,7 +1938,7 @@ func handleZoomPastMeetingInviteeDelete(ctx context.Context, key string, invitee
 		attendeeXrefKey := fmt.Sprintf("v1_participant_by_meeting_user.attendee.%s.%s", meetingAndOccurrenceID, username)
 		if entry, err := mappingsKV.Get(ctx, attendeeXrefKey); err == nil && !isTombstonedMapping(entry.Value()) {
 			funcLogger.DebugContext(ctx, "participant has active attendee record; applying partial delete (is_invited=false, not removing from V2)")
-			return handleZoomPastMeetingPartialInviteeDelete(ctx, funcLogger, inviteeID, meetingAndOccurrenceID, username, v1Data)
+			return handleZoomPastMeetingPartialInviteeDelete(ctx, funcLogger, inviteeID, string(entry.Value()), meetingAndOccurrenceID, username)
 		}
 	}
 
@@ -1964,18 +1985,41 @@ func handleZoomPastMeetingInviteeDelete(ctx context.Context, key string, invitee
 // participant still has an active attendee record in V2. Rather than removing the participant from
 // the index and openfga entirely, it sends an UPDATE with is_invited=false so the participant
 // remains in V2 with the correct flags.
-func handleZoomPastMeetingPartialInviteeDelete(ctx context.Context, funcLogger *slog.Logger, inviteeID, meetingAndOccurrenceID, username string, v1Data map[string]any) bool {
-	invitee, err := convertMapToInputPastMeetingInvitee(v1Data)
-	if err != nil {
-		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to convert v1Data for partial invitee delete")
-		return false // non-retriable; best effort
-	}
-	v2Participant, err := convertInviteeToV2Participant(invitee, false)
-	if err != nil {
-		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to build V2 participant for partial invitee delete")
+// attendeeID is the ID of the surviving attendee record, used to fetch the authoritative data.
+func handleZoomPastMeetingPartialInviteeDelete(ctx context.Context, funcLogger *slog.Logger, inviteeID, attendeeID, meetingAndOccurrenceID, username string) bool {
+	// Build the V2 participant from the surviving attendee record so unrelated fields
+	// (host, sessions, etc.) are not overwritten with stale invitee data.
+	attendeeData, exists, err := getV1ObjectData(ctx, fmt.Sprintf("itx-zoom-past-meetings-attendees.%s", attendeeID))
+	if err != nil || !exists {
+		funcLogger.With(errKey, err).WarnContext(ctx, "failed to fetch attendee data for partial invitee delete; skipping")
 		return false
 	}
-	// Override flags: the invitee record is gone but the attendee record remains.
+	attendee, err := convertMapToInputPastMeetingAttendee(attendeeData)
+	if err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to convert attendee data for partial invitee delete")
+		return false
+	}
+	// Re-derive isHost and isRegistrant from the registrant record, same as the attendee upsert handler.
+	isHost := false
+	isRegistrant := false
+	if attendee.RegistrantID != "" {
+		registrantKey := fmt.Sprintf("itx-zoom-meetings-registrants-v2.%s", attendee.RegistrantID)
+		registrantData, regExists, regErr := getV1ObjectData(ctx, registrantKey)
+		if regErr != nil {
+			funcLogger.With(errKey, regErr, "registrant_id", attendee.RegistrantID).WarnContext(ctx, "failed to get registrant data for partial invitee delete")
+		} else if regExists {
+			isRegistrant = true
+			if hostValue, ok := registrantData["host"].(bool); ok {
+				isHost = hostValue
+			}
+		}
+	}
+	v2Participant, err := convertAttendeeToV2Participant(attendee, isHost, isRegistrant)
+	if err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to build V2 participant from attendee data for partial invitee delete")
+		return false
+	}
+	// The invitee record is gone; the attendee record remains.
 	v2Participant.IsInvited = false
 	v2Participant.IsAttended = true
 
