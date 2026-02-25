@@ -2095,6 +2095,34 @@ func handleZoomPastMeetingRecordingUpdate(ctx context.Context, key string, v1Dat
 	return false
 }
 
+// handleZoomPastMeetingRecordingDelete processes a deletion of an itx-zoom-past-meetings-recordings record.
+// Both the recording and its transcript are deleted since they share the same source record.
+// Returns true if the operation should be retried, false otherwise.
+func handleZoomPastMeetingRecordingDelete(ctx context.Context, key string, meetingAndOccurrenceID string) bool {
+	// Skip if already tombstoned — prevents double processing when the DynamoDB path
+	// has already handled the delete before the KV watcher fires.
+	mappingKey := fmt.Sprintf("v1_past_meeting_recordings.%s", meetingAndOccurrenceID)
+	if entry, err := mappingsKV.Get(ctx, mappingKey); err == nil && isTombstonedMapping(entry.Value()) {
+		logger.With("key", key, "meeting_and_occurrence_id", meetingAndOccurrenceID).
+			DebugContext(ctx, "past meeting recording delete already processed, skipping")
+		return false
+	}
+
+	// Delete recording from indexer. No access subject: fga-sync has no delete_all_access for recordings.
+	if retry := handleMeetingTypeDelete(ctx, key, meetingAndOccurrenceID, nil, meetingDeleteConfig{
+		indexerSubject:   IndexV1PastMeetingRecordingSubject,
+		tombstoneKeyFmts: []string{},
+	}); retry {
+		return true
+	}
+
+	// Delete transcript from indexer and tombstone the shared mapping.
+	return handleMeetingTypeDelete(ctx, key, meetingAndOccurrenceID, nil, meetingDeleteConfig{
+		indexerSubject:   IndexV1PastMeetingTranscriptSubject,
+		tombstoneKeyFmts: []string{"v1_past_meeting_recordings.%s"},
+	})
+}
+
 // PastMeetingSummaryAccessMessage is the schema for the data in the message sent to the fga-sync service.
 // These are the fields that the fga-sync service needs in order to update the OpenFGA permissions for summaries.
 type PastMeetingSummaryAccessMessage struct {
