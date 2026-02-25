@@ -1477,6 +1477,15 @@ func handleZoomPastMeetingInviteeUpdate(ctx context.Context, key string, v1Data 
 		}
 	}
 
+	// If an attendee record already exists for this participant, preserve is_attended=true so
+	// a late-arriving invitee upsert doesn't reset the flag that the attendee handler already set.
+	if invitee.LFSSO != "" {
+		attendeeXrefKey := fmt.Sprintf("v1_participant_by_meeting_user.attendee.%s.%s", invitee.MeetingAndOccurrenceID, invitee.LFSSO)
+		if entry, err := mappingsKV.Get(ctx, attendeeXrefKey); err == nil && !isTombstonedMapping(entry.Value()) {
+			v2Participant.IsAttended = true
+		}
+	}
+
 	mappingKey := fmt.Sprintf("v1_past_meeting_invitees.%s", inviteeID)
 	indexerAction := MessageActionCreated
 	if _, err := mappingsKV.Get(ctx, mappingKey); err == nil {
@@ -1544,7 +1553,7 @@ func convertInviteeToV2Participant(invitee *pastMeetingInviteeInput, isHost bool
 		AvatarURL:              invitee.ProfilePicture,
 		Username:               mapUsernameToAuthSub(invitee.LFSSO),
 		IsInvited:              true,
-		IsAttended:             false,                  // TODO: we need to ensure that the invitee event is handled before the attendee event so that this value doesn't get reset if the order is reversed
+		IsAttended:             false, // may be overridden in the upsert handler if an attendee record already exists
 		Sessions:               []ParticipantSession{}, // TODO: we need to determine the sessions for the invitee from the attendee event
 	}
 
