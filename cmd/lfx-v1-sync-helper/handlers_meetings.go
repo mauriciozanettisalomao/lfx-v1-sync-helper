@@ -2289,6 +2289,25 @@ func handleZoomPastMeetingSummaryUpdate(ctx context.Context, key string, v1Data 
 	return false
 }
 
+// handleZoomPastMeetingSummaryDelete processes a deletion of an itx-zoom-past-meetings-summaries record.
+// Returns true if the operation should be retried, false otherwise.
+func handleZoomPastMeetingSummaryDelete(ctx context.Context, key string, summaryID string) bool {
+	funcLogger := logger.With("key", key, "summary_id", summaryID)
+
+	// Skip if already tombstoned — prevents double processing when the DynamoDB path
+	// has already handled the delete before the KV watcher fires.
+	mappingKey := fmt.Sprintf("v1_past_meeting_summaries.%s", summaryID)
+	if entry, err := mappingsKV.Get(ctx, mappingKey); err == nil && isTombstonedMapping(entry.Value()) {
+		funcLogger.DebugContext(ctx, "past meeting summary delete already processed, skipping")
+		return false
+	}
+
+	return handleMeetingTypeDelete(ctx, key, summaryID, []byte(summaryID), meetingDeleteConfig{
+		indexerSubject:   IndexV1PastMeetingSummarySubject,
+		tombstoneKeyFmts: []string{"v1_past_meeting_summaries.%s"},
+	})
+}
+
 func shouldShowMeetingAttendees(m meetingInput) bool {
 	allowedShowMeetingAttendeesSFDCIds := []string{"a0941000002wBz9AAE"}
 	return strings.EqualFold(m.MeetingType, "board") && slices.Contains(allowedShowMeetingAttendeesSFDCIds, m.ProjectSFID)
