@@ -38,6 +38,16 @@ var (
 	jsContext  jetstream.JetStream
 	v1KV       jetstream.KeyValue
 	mappingsKV jetstream.KeyValue
+
+	// distributedSync is the singleton mappingLocker used to serialise
+	// concurrent read-modify-write operations on shared mapping state.
+	// Callers pass fully-qualified lock keys (including any namespace prefix).
+	// TODO: When migrating handlers to the wrapper services, review the
+	// initialization pattern — a global singleton may not fit the target
+	// design (globals can be harder to test, maintain, and reason about),
+	// so the lock backend, lifecycle, and injection strategy will need
+	// a proper design review.
+	distributedSync mappingLocker
 )
 
 // main parses optional flags and starts the NATS subscribers.
@@ -199,6 +209,9 @@ func main() {
 		logger.With(errKey, err).Error("error accessing v1-mappings KV bucket")
 		os.Exit(1)
 	}
+
+	// Initialize the distributed sync singleton backed by the mappings KV bucket.
+	distributedSync = newKVMappingLocker(mappingsKV)
 
 	// Create or get the JetStream pull consumer for v1 objects KV bucket
 	// This replaces the KV Watch() method to enable horizontal scaling

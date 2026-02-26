@@ -688,10 +688,19 @@ func handleZoomMeetingMappingDelete(ctx context.Context, key string, mappingID s
 	}
 	funcLogger = funcLogger.With("meeting_id", meetingID)
 
-	// TODO: Same concurrency concern as handleZoomMeetingMappingUpdate applies
-	// here. Concurrent deletes for the same meeting do an unguarded
-	// read-modify-write on the KV bucket, so wrong behaviour is possible.
-	// See the TODO in handleZoomMeetingMappingUpdate for possible solutions.
+	// Acquire a per-meeting distributed lock to serialise concurrent
+	// read-modify-write operations on the committee-mappings index.
+	lockKey := meetingMappingLockKeyPrefix + meetingID
+	acquired, _ := distributedSync.acquire(ctx, lockKey)
+	if !acquired {
+		funcLogger.WarnContext(ctx, "failed to acquire meeting mapping lock, will retry")
+		return true
+	}
+	defer func() {
+		if err := distributedSync.release(ctx, lockKey); err != nil {
+			funcLogger.With(errKey, err).WarnContext(ctx, "failed to release meeting mapping lock")
+		}
+	}()
 
 	// Load the committee mappings index, remove this entry, and store the updated index.
 	committeeMappings := make(map[string]mappingCommittee)
