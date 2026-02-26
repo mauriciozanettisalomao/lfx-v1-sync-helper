@@ -561,7 +561,7 @@ func handleZoomMeetingMappingUpdate(ctx context.Context, key string, v1Data map[
 	}
 	if !exists {
 		funcLogger.WarnContext(ctx, "meeting data not found or deleted in KV bucket")
-		return false
+		return true
 	}
 
 	meeting, err := convertMapToInputMeeting(ctx, meetingData)
@@ -1666,7 +1666,7 @@ func convertInviteeToV2Participant(invitee *pastMeetingInviteeInput, isHost bool
 		AvatarURL:              invitee.ProfilePicture,
 		Username:               mapUsernameToAuthSub(invitee.LFSSO),
 		IsInvited:              true,
-		IsAttended:             false, // may be overridden in the upsert handler if an attendee record already exists
+		IsAttended:             false,                  // may be overridden in the upsert handler if an attendee record already exists
 		Sessions:               []ParticipantSession{}, // TODO: we need to determine the sessions for the invitee from the attendee event
 	}
 
