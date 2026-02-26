@@ -129,8 +129,7 @@ func handleKVPut(ctx context.Context, entry jetstream.KeyValueEntry) bool {
 	case "itx-zoom-meetings-invite-responses-v2":
 		return handleZoomMeetingInviteResponseUpdate(ctx, key, v1Data)
 	case "itx-zoom-meetings-mappings-v2":
-		handleZoomMeetingMappingUpdate(ctx, key, v1Data)
-		return false
+		return handleZoomMeetingMappingUpdate(ctx, key, v1Data)
 	case "itx-zoom-past-meetings-mappings":
 		handleZoomPastMeetingMappingUpdate(ctx, key, v1Data)
 		return false
