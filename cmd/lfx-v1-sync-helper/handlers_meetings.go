@@ -702,6 +702,7 @@ func handleZoomMeetingMappingDelete(ctx context.Context, key string, mappingID s
 	if indexEntry, err := mappingsKV.Get(ctx, indexKey); err == nil {
 		if err := json.Unmarshal(indexEntry.Value(), &committeeMappings); err != nil {
 			funcLogger.With(errKey, err).WarnContext(ctx, "failed to unmarshal meeting mapping index")
+			return false
 		}
 	}
 	delete(committeeMappings, mappingID)
