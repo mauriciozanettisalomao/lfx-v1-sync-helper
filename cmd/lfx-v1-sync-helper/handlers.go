@@ -219,12 +219,17 @@ func handleResourceDelete(ctx context.Context, key string, v1Principal string, v
 		return handleZoomPastMeetingDelete(ctx, key, sfid)
 	case "itx-zoom-meetings-invite-responses-v2":
 		return handleZoomMeetingInviteResponseDelete(ctx, key, sfid)
+	case "itx-zoom-past-meetings-invitees":
+		return handleZoomPastMeetingInviteeDelete(ctx, key, sfid, v1Data)
+	case "itx-zoom-meetings-mappings-v2":
+		logger.With("key", key).DebugContext(ctx, "meeting-related delete not yet implemented")
+		return false
+	case "itx-zoom-past-meetings-mappings":
+		logger.With("key", key).DebugContext(ctx, "meeting-related delete not yet implemented")
+		return false
 	case "itx-zoom-past-meetings-recordings":
 		return handleZoomPastMeetingRecordingDelete(ctx, key, sfid)
-	case "itx-zoom-meetings-mappings-v2",
-		"itx-zoom-past-meetings-invitees",
-		"itx-zoom-past-meetings-mappings",
-		"itx-zoom-past-meetings-summaries":
+	case "itx-zoom-past-meetings-summaries":
 		logger.With("key", key).DebugContext(ctx, "meeting-related delete not yet implemented")
 		return false
 	default:
