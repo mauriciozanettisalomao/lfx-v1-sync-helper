@@ -126,6 +126,10 @@ func handleKVPut(ctx context.Context, entry jetstream.KeyValueEntry) bool {
 		return handleZoomPastMeetingRecordingUpdate(ctx, key, v1Data)
 	case "itx-zoom-past-meetings-summaries":
 		return handleZoomPastMeetingSummaryUpdate(ctx, key, v1Data)
+	case "itx-zoom-meetings-attachments-v2":
+		return handleMeetingAttachmentUpdate(ctx, key, v1Data)
+	case "itx-zoom-past-meetings-attachments":
+		return handlePastMeetingAttachmentUpdate(ctx, key, v1Data)
 	case "itx-zoom-meetings-invite-responses-v2":
 		return handleZoomMeetingInviteResponseUpdate(ctx, key, v1Data)
 	case "itx-zoom-meetings-mappings-v2":
