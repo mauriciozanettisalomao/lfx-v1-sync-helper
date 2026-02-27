@@ -2844,6 +2844,8 @@ func sendMeetingAttachmentIndexerMessage(ctx context.Context, subject string, ac
 		return fmt.Errorf("failed to marshal indexer message for subject %s: %w", subject, err)
 	}
 
+	logger.With("subject", subject, "action", action).DebugContext(ctx, "constructed indexer message")
+
 	if err := natsConn.Publish(subject, messageBytes); err != nil {
 		return fmt.Errorf("failed to publish indexer message to subject %s: %w", subject, err)
 	}
@@ -2907,7 +2909,7 @@ func handleMeetingAttachmentUpdate(ctx context.Context, key string, v1Data map[s
 		}
 	}
 
-	funcLogger.InfoContext(ctx, "successfully sent meeting attachment indexer and access messages")
+	funcLogger.InfoContext(ctx, "successfully sent meeting attachment indexer message")
 	return false
 }
 
@@ -3015,6 +3017,8 @@ func sendPastMeetingAttachmentIndexerMessage(ctx context.Context, subject string
 		return fmt.Errorf("failed to marshal indexer message for subject %s: %w", subject, err)
 	}
 
+	logger.With("subject", subject, "action", action).DebugContext(ctx, "constructed indexer message")
+
 	if err := natsConn.Publish(subject, messageBytes); err != nil {
 		return fmt.Errorf("failed to publish indexer message to subject %s: %w", subject, err)
 	}
@@ -3078,7 +3082,7 @@ func handlePastMeetingAttachmentUpdate(ctx context.Context, key string, v1Data m
 		}
 	}
 
-	funcLogger.InfoContext(ctx, "successfully sent past meeting attachment indexer and access messages")
+	funcLogger.InfoContext(ctx, "successfully sent past meeting attachment indexer message")
 	return false
 }
 

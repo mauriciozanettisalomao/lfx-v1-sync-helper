@@ -233,6 +233,12 @@ func handleResourceDelete(ctx context.Context, key string, v1Principal string, v
 		return handleZoomPastMeetingRecordingDelete(ctx, key, sfid)
 	case "itx-zoom-past-meetings-summaries":
 		return handleZoomPastMeetingSummaryDelete(ctx, key, sfid)
+	case "itx-zoom-meetings-attachments-v2":
+		logger.With("key", key).DebugContext(ctx, "meeting attachment delete not yet implemented")
+		return false
+	case "itx-zoom-past-meetings-attachments":
+		logger.With("key", key).DebugContext(ctx, "past meeting attachment delete not yet implemented")
+		return false
 	default:
 		logger.With("key", key).WarnContext(ctx, "unknown object type for deletion, ignoring")
 		return false
