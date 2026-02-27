@@ -13,16 +13,20 @@ import (
 
 // CreatedBy represents the user that created a resource.
 type CreatedBy struct {
-	UserID   string `json:"user_id,omitempty"`
-	Username string `json:"username,omitempty"`
-	Email    string `json:"email,omitempty"`
+	UserID         string `json:"user_id,omitempty"`
+	Username       string `json:"username,omitempty"`
+	Email          string `json:"email,omitempty"`
+	Name           string `json:"name,omitempty"`
+	ProfilePicture string `json:"profile_picture,omitempty"`
 }
 
 // UpdatedBy represents the user that updated a resource.
 type UpdatedBy struct {
-	UserID   string `json:"user_id,omitempty"`
-	Username string `json:"username,omitempty"`
-	Email    string `json:"email,omitempty"`
+	UserID         string `json:"user_id,omitempty"`
+	Username       string `json:"username,omitempty"`
+	Email          string `json:"email,omitempty"`
+	Name           string `json:"name,omitempty"`
+	ProfilePicture string `json:"profile_picture,omitempty"`
 }
 
 // ZoomMeetingRecurrence is the schema for a meeting recurrence
@@ -1053,6 +1057,89 @@ type inviteResponseInput struct {
 	ModifiedAt string `json:"modified_at" dynamodbav:"modified_at"`
 }
 
+// MeetingAttachmentDB is the model for meeting attachments in the database
+type MeetingAttachmentDB struct {
+	ID               string     `json:"id" dynamodbav:"id"`
+	MeetingID        string     `json:"meeting_id" dynamodbav:"meeting_id"`
+	Type             string     `json:"type" dynamodbav:"type"`
+	Category         string     `json:"category" dynamodbav:"category,omitempty"`
+	Link             string     `json:"link" dynamodbav:"link"`
+	Name             string     `json:"name" dynamodbav:"name"`
+	Description      string     `json:"description" dynamodbav:"description"`
+	FileName         string     `json:"file_name" dynamodbav:"file_name,omitempty"`
+	FileSize         int        `json:"file_size" dynamodbav:"file_size,omitempty"`
+	FileURL          string     `json:"file_url" dynamodbav:"file_url,omitempty"`
+	FileUploaded     *bool      `json:"file_uploaded" dynamodbav:"file_uploaded,omitempty"`
+	FileUploadStatus string     `json:"file_upload_status" dynamodbav:"file_upload_status,omitempty"`
+	FileContentType  string     `json:"file_content_type" dynamodbav:"file_content_type,omitempty"`
+	CreatedAt        string     `json:"created_at" dynamodbav:"created_at"`
+	CreatedBy        CreatedBy  `json:"created_by" dynamodbav:"created_by"`
+	UpdatedAt        string     `json:"updated_at" dynamodbav:"updated_at"`
+	UpdatedBy        UpdatedBy  `json:"updated_by" dynamodbav:"updated_by"`
+	FileUploadedBy   *CreatedBy `json:"file_uploaded_by" dynamodbav:"file_uploaded_by,omitempty"`
+	FileUploadedAt   string     `json:"file_uploaded_at" dynamodbav:"file_uploaded_at,omitempty"`
+}
+
+// UnmarshalJSON implements custom unmarshaling to handle both string and int inputs for numeric fields.
+func (m *MeetingAttachmentDB) UnmarshalJSON(data []byte) error {
+	type Alias MeetingAttachmentDB
+	tmp := struct {
+		FileSize interface{} `json:"file_size"`
+		*Alias
+	}{
+		Alias: (*Alias)(m),
+	}
+
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+
+	// Handle FileSize
+	switch v := tmp.FileSize.(type) {
+	case string:
+		if v != "" {
+			val, err := strconv.Atoi(v)
+			if err != nil {
+				return err
+			}
+			m.FileSize = val
+		}
+	case float64:
+		m.FileSize = int(v)
+	case int:
+		m.FileSize = v
+	default:
+		if v != nil {
+			return fmt.Errorf("invalid type for file_size: %T", v)
+		}
+	}
+
+	return nil
+}
+
+// InputMeetingAttachment is the model for meeting attachments in the v2 system
+type InputMeetingAttachment struct {
+	UID              string     `json:"uid"`
+	MeetingID        string     `json:"meeting_id"`
+	Type             string     `json:"type"`
+	Category         string     `json:"category,omitempty"`
+	Link             string     `json:"link"`
+	Name             string     `json:"name"`
+	Description      string     `json:"description"`
+	FileName         string     `json:"file_name,omitempty"`
+	FileSize         int        `json:"file_size,omitempty"`
+	FileURL          string     `json:"file_url,omitempty"`
+	FileUploaded     *bool      `json:"file_uploaded,omitempty"`
+	FileUploadStatus string     `json:"file_upload_status,omitempty"`
+	FileContentType  string     `json:"file_content_type,omitempty"`
+	CreatedAt        string     `json:"created_at"`
+	CreatedBy        CreatedBy  `json:"created_by"`
+	UpdatedAt        string     `json:"updated_at"`
+	UpdatedBy        UpdatedBy  `json:"updated_by"`
+	FileUploadedBy   *CreatedBy `json:"file_uploaded_by,omitempty"`
+	FileUploadedAt   string     `json:"file_uploaded_at,omitempty"`
+}
+
 // pastMeetingInput represents input data for past meeting records.
 type pastMeetingInput struct {
 	// ID is the partition key of the past meeting table
@@ -1312,6 +1399,91 @@ type ZoomPastMeetingMappingDB struct {
 	// An LF committee can have voting statuses to determine the voting representation of the committee.
 	// Hence this field essentially stores who have these committee members can attend the meeting.
 	CommitteeFilters []string `json:"committee_filters"`
+}
+
+// PastMeetingAttachmentDB is the model for past meeting attachments in the database
+type PastMeetingAttachmentDB struct {
+	ID                     string     `json:"id" dynamodbav:"id"`
+	MeetingAndOccurrenceID string     `json:"meeting_and_occurrence_id" dynamodbav:"meeting_and_occurrence_id"`
+	MeetingID              string     `json:"meeting_id" dynamodbav:"meeting_id"`
+	Type                   string     `json:"type" dynamodbav:"type"`
+	Category               string     `json:"category" dynamodbav:"category,omitempty"`
+	Link                   string     `json:"link" dynamodbav:"link"`
+	Name                   string     `json:"name" dynamodbav:"name"`
+	Description            string     `json:"description" dynamodbav:"description"`
+	FileName               string     `json:"file_name" dynamodbav:"file_name,omitempty"`
+	FileSize               int        `json:"file_size" dynamodbav:"file_size,omitempty"`
+	FileURL                string     `json:"file_url" dynamodbav:"file_url,omitempty"`
+	FileUploaded           *bool      `json:"file_uploaded" dynamodbav:"file_uploaded,omitempty"`
+	FileUploadStatus       string     `json:"file_upload_status" dynamodbav:"file_upload_status,omitempty"`
+	FileContentType        string     `json:"file_content_type" dynamodbav:"file_content_type,omitempty"`
+	CreatedAt              string     `json:"created_at" dynamodbav:"created_at"`
+	CreatedBy              CreatedBy  `json:"created_by" dynamodbav:"created_by"`
+	UpdatedAt              string     `json:"updated_at" dynamodbav:"updated_at"`
+	UpdatedBy              UpdatedBy  `json:"updated_by" dynamodbav:"updated_by"`
+	FileUploadedBy         *CreatedBy `json:"file_uploaded_by" dynamodbav:"file_uploaded_by,omitempty"`
+	FileUploadedAt         string     `json:"file_uploaded_at" dynamodbav:"file_uploaded_at,omitempty"`
+}
+
+// UnmarshalJSON implements custom unmarshaling to handle both string and int inputs for numeric fields.
+func (m *PastMeetingAttachmentDB) UnmarshalJSON(data []byte) error {
+	type Alias PastMeetingAttachmentDB
+	tmp := struct {
+		FileSize interface{} `json:"file_size"`
+		*Alias
+	}{
+		Alias: (*Alias)(m),
+	}
+
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+
+	// Handle FileSize
+	switch v := tmp.FileSize.(type) {
+	case string:
+		if v != "" {
+			val, err := strconv.Atoi(v)
+			if err != nil {
+				return err
+			}
+			m.FileSize = val
+		}
+	case float64:
+		m.FileSize = int(v)
+	case int:
+		m.FileSize = v
+	default:
+		if v != nil {
+			return fmt.Errorf("invalid type for file_size: %T", v)
+		}
+	}
+
+	return nil
+}
+
+// InputPastMeetingAttachment is the model for past meeting attachments in the v2 system
+type InputPastMeetingAttachment struct {
+	UID                    string     `json:"uid"`
+	MeetingAndOccurrenceID string     `json:"meeting_and_occurrence_id"`
+	MeetingID              string     `json:"meeting_id"`
+	Type                   string     `json:"type"`
+	Category               string     `json:"category,omitempty"`
+	Link                   string     `json:"link"`
+	Name                   string     `json:"name"`
+	Description            string     `json:"description"`
+	FileName               string     `json:"file_name,omitempty"`
+	FileSize               int        `json:"file_size,omitempty"`
+	FileURL                string     `json:"file_url,omitempty"`
+	FileUploaded           *bool      `json:"file_uploaded,omitempty"`
+	FileUploadStatus       string     `json:"file_upload_status,omitempty"`
+	FileContentType        string     `json:"file_content_type,omitempty"`
+	CreatedAt              string     `json:"created_at"`
+	CreatedBy              CreatedBy  `json:"created_by"`
+	UpdatedAt              string     `json:"updated_at"`
+	UpdatedBy              UpdatedBy  `json:"updated_by"`
+	FileUploadedBy         *CreatedBy `json:"file_uploaded_by,omitempty"`
+	FileUploadedAt         string     `json:"file_uploaded_at,omitempty"`
 }
 
 // pastMeetingInviteeInput is the schema for a past meeting invitee in DynamoDB.

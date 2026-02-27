@@ -82,8 +82,10 @@ plugins:
       - itx-zoom-past-meetings-invitees
       - itx-zoom-past-meetings-recordings
       - itx-zoom-past-meetings-summaries
+      - itx-zoom-past-meetings-attachments
       - itx-zoom-meetings-registrants-v2
       - itx-zoom-meetings-invite-responses-v2
+      - itx-zoom-meetings-attachments-v2
       metadata:
         '*':
           # Setting the replication key allows conditional loads for
@@ -108,6 +110,10 @@ plugins:
         itx-zoom-past-meetings-mappings:
           # No timestamp field for this table.
           replication-key: ''
+        itx-zoom-meetings-attachments-v2:
+          replication-key: 'updated_at'
+        itx-zoom-past-meetings-attachments:
+          replication-key: 'updated_at'
       use_aws_env_vars: true
     schema:
       # Override auto-detected schema for alternate columns and datatypes that
