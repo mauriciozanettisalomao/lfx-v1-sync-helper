@@ -522,139 +522,253 @@ type mappingCommittee struct {
 }
 
 // handleZoomMeetingMappingUpdate processes a zoom meeting mapping update from itx-zoom-meetings-mappings-v2 records.
-// When a mapping is created/updated, we need to fetch the associated meeting and trigger a re-index with updated committees.
-func handleZoomMeetingMappingUpdate(ctx context.Context, key string, v1Data map[string]any) {
+// When a mapping is created/updated, we fetch the associated meeting and trigger a re-index with updated committees.
+// Returns true if the operation should be retried, false otherwise.
+func handleZoomMeetingMappingUpdate(ctx context.Context, key string, v1Data map[string]any) bool {
 	// Check if we should skip this sync operation.
 	if shouldSkipSync(ctx, v1Data) {
-		return
+		return false
 	}
 
 	funcLogger := logger.With("key", key)
-
 	funcLogger.DebugContext(ctx, "processing zoom meeting mapping update")
 
-	// Convert v1Data map to ZoomMeetingMappingDB struct
 	mapping, err := convertMapToInputMeetingMapping(v1Data)
 	if err != nil {
 		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to convert v1Data to ZoomMeetingMappingDB")
-		return
+		return false
 	}
 
-	// Extract the meeting ID from the mapping
 	meetingID := mapping.MeetingID
 	if meetingID == "" {
 		funcLogger.ErrorContext(ctx, "missing meeting_id in mapping data")
-		return
+		return false
 	}
-	mappingKey := fmt.Sprintf("v1_meetings.%s", meetingID)
+	funcLogger = funcLogger.With("meeting_id", meetingID)
 
-	// Extract the committee ID from the mapping
 	committeeID := mapping.CommitteeID
 	if committeeID == "" {
-		funcLogger.With("meeting_id", meetingID).WarnContext(ctx, "mapping has no committee_id")
-		return
+		funcLogger.WarnContext(ctx, "mapping has no committee_id")
+		return false
 	}
 
-	// Fetch and parse the meeting data.
+	// Fetch meeting data outside the lock — it is read-only here.
 	meetingKey := fmt.Sprintf("itx-zoom-meetings-v2.%s", meetingID)
 	meetingData, exists, err := getV1ObjectData(ctx, meetingKey)
 	if err != nil {
-		funcLogger.With(errKey, err, "meeting_id", meetingID).ErrorContext(ctx, "failed to get meeting data from KV bucket")
-		return
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to get meeting data from KV bucket")
+		return false
 	}
 	if !exists {
-		funcLogger.With("meeting_id", meetingID).WarnContext(ctx, "meeting data not found or deleted in KV bucket")
-		return
+		funcLogger.WarnContext(ctx, "meeting data not found or deleted in KV bucket")
+		return true
 	}
 
-	// Convert meeting data to typed struct
 	meeting, err := convertMapToInputMeeting(ctx, meetingData)
 	if err != nil {
-		funcLogger.With(errKey, err, "meeting_id", meetingID).ErrorContext(ctx, "failed to convert meeting data")
-		return
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to convert meeting data")
+		return false
 	}
 
+	// Acquire a per-meeting distributed lock to serialise the read-modify-write
+	// on the committee-mappings index. The lock is released before sending
+	// messages to minimise hold time.
+	lockKey := meetingMappingLockKeyPrefix + meetingID
+	acquired, _ := distributedSync.acquire(ctx, lockKey)
+	if !acquired {
+		funcLogger.WarnContext(ctx, "failed to acquire meeting mapping lock, will retry")
+		return true
+	}
+
+	// Determine indexer action before modifying the index.
+	mappingKey := fmt.Sprintf("v1_meetings.%s", meetingID)
+	indexerAction := MessageActionCreated
+	if _, err := mappingsKV.Get(ctx, mappingKey); err == nil {
+		indexerAction = MessageActionUpdated
+	}
+
+	// Read the current committee-mappings index.
 	committeeMappings := make(map[string]mappingCommittee)
 	indexKey := fmt.Sprintf("v1-mappings.meeting-mappings.%s", meetingID)
-	indexEntry, _ := mappingsKV.Get(ctx, indexKey)
-	if indexEntry != nil {
+	if indexEntry, err := mappingsKV.Get(ctx, indexKey); err == nil {
 		if err := json.Unmarshal(indexEntry.Value(), &committeeMappings); err != nil {
-			funcLogger.With(errKey, err, "meeting_id", meetingID).WarnContext(ctx, "failed to unmarshal meeting mapping index")
-			return
+			funcLogger.With(errKey, err).WarnContext(ctx, "failed to unmarshal meeting mapping index")
+			_ = distributedSync.release(ctx, lockKey)
+			return false
 		}
 	}
 
-	if meeting != nil {
-		committees := []string{}
-		meeting.Committees = []Committee{}
-		for _, committee := range committeeMappings {
-			committees = append(committees, committee.CommitteeID)
-			meeting.Committees = append(meeting.Committees, Committee{
-				UID:                   committee.CommitteeID,
-				AllowedVotingStatuses: committee.CommitteeFilters,
-			})
-		}
-
-		// Determine indexer action based on mapping existence
-		indexerAction := MessageActionCreated
-		if _, err := mappingsKV.Get(ctx, mappingKey); err == nil {
-			indexerAction = MessageActionUpdated
-		}
-
-		// Send meeting indexer message with the meeting data
-		tags := getMeetingTags(meeting)
-		if err := sendIndexerMessage(ctx, IndexV1MeetingSubject, indexerAction, meeting, tags); err != nil {
-			funcLogger.With(errKey, err, "meeting_id", meetingID).ErrorContext(ctx, "failed to send meeting indexer message")
-			return
-		}
-
-		// Send meeting access message with updated committees
-		accessMsg := MeetingAccessMessage{
-			UID:        meetingID,
-			Public:     meeting.Visibility == "public",
-			ProjectUID: meeting.ProjectUID,
-			Organizers: []string{},
-			Committees: committees,
-		}
-
-		accessMsgBytes, err := json.Marshal(accessMsg)
-		if err != nil {
-			funcLogger.With(errKey, err, "meeting_id", meetingID).ErrorContext(ctx, "failed to marshal access message")
-			return
-		}
-
-		if err := sendAccessMessage(UpdateAccessV1MeetingSubject, accessMsgBytes); err != nil {
-			funcLogger.With(errKey, err, "meeting_id", meetingID).ErrorContext(ctx, "failed to send meeting access message")
-			return
-		}
+	// Upsert this committee into the index so the outgoing messages always
+	// carry the complete, up-to-date committee list (including the new entry).
+	committeeMappings[mapping.ID] = mappingCommittee{
+		CommitteeID:      committeeID,
+		CommitteeFilters: mapping.CommitteeFilters,
 	}
 
-	// Store the mapping
-	if meetingID != "" {
-		if _, err := mappingsKV.Put(ctx, mappingKey, []byte("1")); err != nil {
-			funcLogger.With(errKey, err, "meeting_id", meetingID).WarnContext(ctx, "failed to store meeting mapping")
-		}
+	// Persist the updated index and the mapping marker.
+	committeeMappingsBytes, err := json.Marshal(committeeMappings)
+	if err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to marshal committee mappings")
+		_ = distributedSync.release(ctx, lockKey)
+		return false
+	}
+	if _, err := mappingsKV.Put(ctx, indexKey, committeeMappingsBytes); err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to store committee mappings")
+		_ = distributedSync.release(ctx, lockKey)
+		return false
+	}
+	if _, err := mappingsKV.Put(ctx, mappingKey, []byte("1")); err != nil {
+		funcLogger.With(errKey, err).WarnContext(ctx, "failed to store meeting mapping marker")
 	}
 
-	// Only add the committee mapping if it doesn't already exist.
-	if _, ok := committeeMappings[mapping.ID]; !ok {
-		committeeMappings[mapping.ID] = mappingCommittee{
-			CommitteeID:      committeeID,
-			CommitteeFilters: mapping.CommitteeFilters,
-		}
-		indexKey = fmt.Sprintf("v1-mappings.meeting-mappings.%s", meetingID)
-		committeeMappingsBytes, err := json.Marshal(committeeMappings)
-		if err != nil {
-			funcLogger.With(errKey, err, "meeting_id", meetingID).ErrorContext(ctx, "failed to marshal committee mappings")
-			return
-		}
-		if _, err := mappingsKV.Put(ctx, indexKey, committeeMappingsBytes); err != nil {
-			funcLogger.With(errKey, err, "meeting_id", meetingID).ErrorContext(ctx, "failed to store committee mappings")
-			return
-		}
+	// Release the lock before sending messages to minimise hold time.
+	if err := distributedSync.release(ctx, lockKey); err != nil {
+		funcLogger.With(errKey, err).WarnContext(ctx, "failed to release meeting mapping lock")
 	}
 
-	funcLogger.With("meeting_id", meetingID, "committee_id", committeeID).InfoContext(ctx, "successfully triggered meeting re-index with updated committees")
+	// Build the committee list from the now-complete index.
+	committees := []string{}
+	meeting.Committees = []Committee{}
+	for _, committee := range committeeMappings {
+		committees = append(committees, committee.CommitteeID)
+		meeting.Committees = append(meeting.Committees, Committee{
+			UID:                   committee.CommitteeID,
+			AllowedVotingStatuses: committee.CommitteeFilters,
+		})
+	}
+
+	tags := getMeetingTags(meeting)
+	if err := sendIndexerMessage(ctx, IndexV1MeetingSubject, indexerAction, meeting, tags); err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to send meeting indexer message")
+		return false
+	}
+
+	accessMsg := MeetingAccessMessage{
+		UID:        meetingID,
+		Public:     meeting.Visibility == "public",
+		ProjectUID: meeting.ProjectUID,
+		Organizers: []string{},
+		Committees: committees,
+	}
+	accessMsgBytes, err := json.Marshal(accessMsg)
+	if err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to marshal access message")
+		return false
+	}
+	if err := sendAccessMessage(UpdateAccessV1MeetingSubject, accessMsgBytes); err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to send meeting access message")
+		return false
+	}
+
+	funcLogger.With("committee_id", committeeID).InfoContext(ctx, "successfully triggered meeting re-index with updated committees")
+	return false
+}
+
+// handleZoomMeetingMappingDelete processes a deletion of an itx-zoom-meetings-mappings-v2 record.
+// It removes the deleted committee from the meeting's committee index and re-indexes the meeting.
+// Returns true if the operation should be retried, false otherwise.
+func handleZoomMeetingMappingDelete(ctx context.Context, key string, mappingID string, v1Data map[string]any) bool {
+	funcLogger := logger.With("key", key, "mapping_id", mappingID)
+
+	if v1Data == nil {
+		funcLogger.WarnContext(ctx, "no v1Data available for meeting mapping delete, skipping")
+		return false
+	}
+
+	meetingID, ok := v1Data["meeting_id"].(string)
+	if !ok || meetingID == "" {
+		funcLogger.ErrorContext(ctx, "missing or invalid meeting_id in v1Data for meeting mapping delete")
+		return false
+	}
+	funcLogger = funcLogger.With("meeting_id", meetingID)
+
+	// Acquire a per-meeting distributed lock to serialise concurrent
+	// read-modify-write operations on the committee-mappings index.
+	lockKey := meetingMappingLockKeyPrefix + meetingID
+	acquired, _ := distributedSync.acquire(ctx, lockKey)
+	if !acquired {
+		funcLogger.WarnContext(ctx, "failed to acquire meeting mapping lock, will retry")
+		return true
+	}
+	defer func() {
+		if err := distributedSync.release(ctx, lockKey); err != nil {
+			funcLogger.With(errKey, err).WarnContext(ctx, "failed to release meeting mapping lock")
+		}
+	}()
+
+	// Load the committee mappings index, remove this entry, and store the updated index.
+	committeeMappings := make(map[string]mappingCommittee)
+	indexKey := fmt.Sprintf("v1-mappings.meeting-mappings.%s", meetingID)
+	if indexEntry, err := mappingsKV.Get(ctx, indexKey); err == nil {
+		if err := json.Unmarshal(indexEntry.Value(), &committeeMappings); err != nil {
+			funcLogger.With(errKey, err).WarnContext(ctx, "failed to unmarshal meeting mapping index")
+			return false
+		}
+	}
+	delete(committeeMappings, mappingID)
+
+	committeeMappingsBytes, err := json.Marshal(committeeMappings)
+	if err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to marshal updated committee mappings")
+		return false
+	}
+	if _, err := mappingsKV.Put(ctx, indexKey, committeeMappingsBytes); err != nil {
+		funcLogger.With(errKey, err).WarnContext(ctx, "failed to store updated committee mappings")
+	}
+
+	// Fetch the meeting and re-index with the remaining committees.
+	meetingKey := fmt.Sprintf("itx-zoom-meetings-v2.%s", meetingID)
+	meetingData, exists, err := getV1ObjectData(ctx, meetingKey)
+	if err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to get meeting data from KV bucket")
+		return false
+	}
+	if !exists {
+		funcLogger.WarnContext(ctx, "meeting data not found in KV bucket, skipping re-index")
+		return false
+	}
+
+	meeting, err := convertMapToInputMeeting(ctx, meetingData)
+	if err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to convert meeting data")
+		return false
+	}
+
+	committees := []string{}
+	meeting.Committees = []Committee{}
+	for _, committee := range committeeMappings {
+		committees = append(committees, committee.CommitteeID)
+		meeting.Committees = append(meeting.Committees, Committee{
+			UID:                   committee.CommitteeID,
+			AllowedVotingStatuses: committee.CommitteeFilters,
+		})
+	}
+
+	tags := getMeetingTags(meeting)
+	if err := sendIndexerMessage(ctx, IndexV1MeetingSubject, MessageActionUpdated, meeting, tags); err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to send meeting indexer message")
+		return false
+	}
+
+	accessMsg := MeetingAccessMessage{
+		UID:        meetingID,
+		Public:     meeting.Visibility == "public",
+		ProjectUID: meeting.ProjectUID,
+		Organizers: []string{},
+		Committees: committees,
+	}
+	accessMsgBytes, err := json.Marshal(accessMsg)
+	if err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to marshal access message")
+		return false
+	}
+	if err := sendAccessMessage(UpdateAccessV1MeetingSubject, accessMsgBytes); err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to send meeting access message")
+		return false
+	}
+
+	funcLogger.InfoContext(ctx, "successfully processed meeting mapping delete")
+	return false
 }
 
 // convertMapToInputRegistrant converts a map[string]any to a RegistrantInput struct.
@@ -1553,7 +1667,7 @@ func convertInviteeToV2Participant(invitee *pastMeetingInviteeInput, isHost bool
 		AvatarURL:              invitee.ProfilePicture,
 		Username:               mapUsernameToAuthSub(invitee.LFSSO),
 		IsInvited:              true,
-		IsAttended:             false, // may be overridden in the upsert handler if an attendee record already exists
+		IsAttended:             false,                  // may be overridden in the upsert handler if an attendee record already exists
 		Sessions:               []ParticipantSession{}, // TODO: we need to determine the sessions for the invitee from the attendee event
 	}
 
@@ -2600,6 +2714,25 @@ func handleZoomPastMeetingSummaryUpdate(ctx context.Context, key string, v1Data 
 
 	funcLogger.InfoContext(ctx, "successfully sent summary indexer and access messages")
 	return false
+}
+
+// handleZoomPastMeetingSummaryDelete processes a deletion of an itx-zoom-past-meetings-summaries record.
+// Returns true if the operation should be retried, false otherwise.
+func handleZoomPastMeetingSummaryDelete(ctx context.Context, key string, summaryID string) bool {
+	funcLogger := logger.With("key", key, "summary_id", summaryID)
+
+	// Skip if already tombstoned — prevents double processing when the DynamoDB path
+	// has already handled the delete before the KV watcher fires.
+	mappingKey := fmt.Sprintf("v1_past_meeting_summaries.%s", summaryID)
+	if entry, err := mappingsKV.Get(ctx, mappingKey); err == nil && isTombstonedMapping(entry.Value()) {
+		funcLogger.DebugContext(ctx, "past meeting summary delete already processed, skipping")
+		return false
+	}
+
+	return handleMeetingTypeDelete(ctx, key, summaryID, []byte(summaryID), meetingDeleteConfig{
+		indexerSubject:   IndexV1PastMeetingSummarySubject,
+		tombstoneKeyFmts: []string{"v1_past_meeting_summaries.%s"},
+	})
 }
 
 func shouldShowMeetingAttendees(m meetingInput) bool {
