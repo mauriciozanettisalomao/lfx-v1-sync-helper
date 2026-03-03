@@ -12,6 +12,9 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	indexerConstants "github.com/linuxfoundation/lfx-v2-indexer-service/pkg/constants"
+	indexerTypes "github.com/linuxfoundation/lfx-v2-indexer-service/pkg/types"
 )
 
 // MessageAction represents the type of action being performed on a resource.
@@ -46,6 +49,9 @@ const (
 	// IndexV1MeetingInviteResponseSubject is the subject for the v1 meeting invite response indexing.
 	IndexV1MeetingInviteResponseSubject = "lfx.index.v1_meeting_rsvp"
 
+	// IndexV1MeetingAttachmentSubject is the subject for the v1 meeting attachment indexing.
+	IndexV1MeetingAttachmentSubject = "lfx.index.v1_meeting_attachment"
+
 	// DeleteAllAccessV1MeetingSubject is the subject for deleting all access control entries for a v1 meeting.
 	DeleteAllAccessV1MeetingSubject = "lfx.delete_all_access.v1_meeting"
 
@@ -66,6 +72,9 @@ const (
 
 	// V1PastMeetingParticipantRemoveSubject is the subject for removing a v1 past meeting participant's access.
 	V1PastMeetingParticipantRemoveSubject = "lfx.remove_participant.v1_past_meeting"
+
+	// IndexV1PastMeetingAttachmentSubject is the subject for the v1 past meeting attachment indexing.
+	IndexV1PastMeetingAttachmentSubject = "lfx.index.v1_past_meeting_attachment"
 
 	// IndexV1PastMeetingRecordingSubject is the subject for the v1 past meeting recording indexing.
 	IndexV1PastMeetingRecordingSubject = "lfx.index.v1_past_meeting_recording"
@@ -2851,6 +2860,348 @@ func handleZoomPastMeetingSummaryDelete(ctx context.Context, key string, summary
 		indexerSubject:   IndexV1PastMeetingSummarySubject,
 		tombstoneKeyFmts: []string{"v1_past_meeting_summaries.%s"},
 	})
+}
+
+// convertMapToMeetingAttachment converts a v1Data map to an InputMeetingAttachment struct.
+func convertMapToMeetingAttachment(ctx context.Context, v1Data map[string]any) (*InputMeetingAttachment, error) {
+	funcLogger := logger.With("handler", "meeting_attachment")
+
+	// Convert map to JSON bytes
+	jsonBytes, err := json.Marshal(v1Data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal v1Data to JSON for meeting attachment: %w", err)
+	}
+
+	// Unmarshal JSON bytes into MeetingAttachmentDB struct (handles flexible types)
+	var attachmentDB MeetingAttachmentDB
+	if err := json.Unmarshal(jsonBytes, &attachmentDB); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal JSON into MeetingAttachmentDB: %w", err)
+	}
+
+	// Convert to InputMeetingAttachment with UID field
+	attachment := InputMeetingAttachment{
+		UID:              attachmentDB.ID, // ID becomes UID for v2
+		MeetingID:        attachmentDB.MeetingID,
+		Type:             attachmentDB.Type,
+		Category:         attachmentDB.Category,
+		Link:             attachmentDB.Link,
+		Name:             attachmentDB.Name,
+		Description:      attachmentDB.Description,
+		FileName:         attachmentDB.FileName,
+		FileSize:         attachmentDB.FileSize,
+		FileURL:          attachmentDB.FileURL,
+		FileUploaded:     attachmentDB.FileUploaded,
+		FileUploadStatus: attachmentDB.FileUploadStatus,
+		FileContentType:  attachmentDB.FileContentType,
+		CreatedAt:        attachmentDB.CreatedAt,
+		CreatedBy:        attachmentDB.CreatedBy,
+		UpdatedAt:        attachmentDB.UpdatedAt,
+		UpdatedBy:        attachmentDB.UpdatedBy,
+		FileUploadedBy:   attachmentDB.FileUploadedBy,
+		FileUploadedAt:   attachmentDB.FileUploadedAt,
+	}
+
+	funcLogger.With("attachment_id", attachment.UID).
+		With("meeting_id", attachment.MeetingID).
+		DebugContext(ctx, "converted meeting attachment")
+
+	return &attachment, nil
+}
+
+// sendMeetingAttachmentIndexerMessage sends the indexer message to NATS for meeting attachments.
+func sendMeetingAttachmentIndexerMessage(ctx context.Context, subject string, action indexerConstants.MessageAction, data InputMeetingAttachment) error {
+	headers := make(map[string]string)
+
+	// Extract authorization from context if available
+	if authorization, ok := ctx.Value("authorization").(string); ok {
+		headers["authorization"] = authorization
+	} else {
+		headers["authorization"] = "Bearer v1-sync-helper"
+	}
+
+	// Extract principal from context if available
+	if principal, ok := ctx.Value("principal").(string); ok {
+		headers["x-on-behalf-of"] = principal
+	}
+
+	// Construct the indexer message
+	public := false
+	nameAndAliases := []string{}
+	parentRefs := []string{}
+	tags := []string{}
+	if data.UID != "" {
+		tags = append(tags, data.UID)
+	}
+	if data.Name != "" {
+		nameAndAliases = append(nameAndAliases, data.Name)
+	}
+	if data.MeetingID != "" {
+		parentRefs = append(parentRefs, fmt.Sprintf("meeting:%s", data.MeetingID))
+	}
+	message := indexerTypes.IndexerMessageEnvelope{
+		Action:  action,
+		Headers: headers,
+		Data:    data,
+		IndexingConfig: &indexerTypes.IndexingConfig{
+			ObjectID:             "{{ uid }}",
+			Public:               &public,
+			AccessCheckObject:    "v1_meeting:{{ meeting_id }}",
+			AccessCheckRelation:  "viewer",
+			HistoryCheckObject:   "v1_meeting:{{ meeting_id }}",
+			HistoryCheckRelation: "auditor",
+			SortName:             "{{ name }}",
+			NameAndAliases:       nameAndAliases,
+			ParentRefs:           parentRefs,
+			Fulltext:             "{{ name }} {{ description }}",
+			Tags:                 tags,
+		},
+	}
+
+	messageBytes, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("failed to marshal indexer message for subject %s: %w", subject, err)
+	}
+
+	logger.With("subject", subject, "action", action).DebugContext(ctx, "constructed indexer message")
+
+	if err := natsConn.Publish(subject, messageBytes); err != nil {
+		return fmt.Errorf("failed to publish indexer message to subject %s: %w", subject, err)
+	}
+
+	return nil
+}
+
+// handleMeetingAttachmentUpdate processes a meeting attachment update from itx-zoom-meetings-attachments-v2 records.
+// Returns true if the operation should be retried, false otherwise.
+func handleMeetingAttachmentUpdate(ctx context.Context, key string, v1Data map[string]any) bool {
+	// Check if we should skip this sync operation.
+	if shouldSkipSync(ctx, v1Data) {
+		return false
+	}
+
+	funcLogger := logger.With("key", key)
+
+	funcLogger.DebugContext(ctx, "processing meeting attachment update")
+
+	// Convert v1Data map to InputMeetingAttachment struct
+	attachment, err := convertMapToMeetingAttachment(ctx, v1Data)
+	if err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to convert v1Data to InputMeetingAttachment")
+		return false
+	}
+
+	// Extract the attachment UID
+	uid := attachment.UID
+	if uid == "" {
+		funcLogger.ErrorContext(ctx, "missing or invalid uid in v1 meeting attachment data")
+		return false
+	}
+	funcLogger = funcLogger.With("attachment_id", uid)
+
+	// Check if parent meeting exists in mappings before proceeding
+	if attachment.MeetingID == "" {
+		funcLogger.ErrorContext(ctx, "meeting attachment missing required parent meeting ID")
+		return false
+	}
+	funcLogger = funcLogger.With("meeting_id", attachment.MeetingID)
+	meetingMappingKey := fmt.Sprintf("v1_meetings.%s", attachment.MeetingID)
+	if _, err := mappingsKV.Get(ctx, meetingMappingKey); err != nil {
+		funcLogger.With(errKey, err).InfoContext(ctx, "parent meeting not found in mappings, will retry meeting attachment sync")
+		return true
+	}
+
+	mappingKey := fmt.Sprintf("v1_meeting_attachments.%s", uid)
+	indexerAction := indexerConstants.ActionCreated
+	if _, err := mappingsKV.Get(ctx, mappingKey); err == nil {
+		indexerAction = indexerConstants.ActionUpdated
+	}
+
+	if err := sendMeetingAttachmentIndexerMessage(ctx, IndexV1MeetingAttachmentSubject, indexerAction, *attachment); err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to send meeting attachment indexer message")
+		return false
+	}
+
+	if uid != "" {
+		if _, err := mappingsKV.Put(ctx, mappingKey, []byte("1")); err != nil {
+			funcLogger.With(errKey, err).WarnContext(ctx, "failed to store meeting attachment mapping")
+		}
+	}
+
+	funcLogger.InfoContext(ctx, "successfully sent meeting attachment indexer message")
+	return false
+}
+
+// convertMapToPastMeetingAttachment converts a v1Data map to an InputPastMeetingAttachment struct.
+func convertMapToPastMeetingAttachment(ctx context.Context, v1Data map[string]any) (*InputPastMeetingAttachment, error) {
+	funcLogger := logger.With("handler", "past_meeting_attachment")
+
+	// Convert map to JSON bytes
+	jsonBytes, err := json.Marshal(v1Data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal v1Data to JSON for past meeting attachment: %w", err)
+	}
+
+	// Unmarshal JSON bytes into PastMeetingAttachmentDB struct (handles flexible types)
+	var attachmentDB PastMeetingAttachmentDB
+	if err := json.Unmarshal(jsonBytes, &attachmentDB); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal JSON into PastMeetingAttachmentDB: %w", err)
+	}
+
+	// Convert to InputPastMeetingAttachment with UID field
+	attachment := InputPastMeetingAttachment{
+		UID:                    attachmentDB.ID, // ID becomes UID for v2
+		MeetingAndOccurrenceID: attachmentDB.MeetingAndOccurrenceID,
+		MeetingID:              attachmentDB.MeetingID,
+		Type:                   attachmentDB.Type,
+		Category:               attachmentDB.Category,
+		Link:                   attachmentDB.Link,
+		Name:                   attachmentDB.Name,
+		Description:            attachmentDB.Description,
+		FileName:               attachmentDB.FileName,
+		FileSize:               attachmentDB.FileSize,
+		FileURL:                attachmentDB.FileURL,
+		FileUploaded:           attachmentDB.FileUploaded,
+		FileUploadStatus:       attachmentDB.FileUploadStatus,
+		FileContentType:        attachmentDB.FileContentType,
+		CreatedAt:              attachmentDB.CreatedAt,
+		CreatedBy:              attachmentDB.CreatedBy,
+		UpdatedAt:              attachmentDB.UpdatedAt,
+		UpdatedBy:              attachmentDB.UpdatedBy,
+		FileUploadedBy:         attachmentDB.FileUploadedBy,
+		FileUploadedAt:         attachmentDB.FileUploadedAt,
+	}
+
+	funcLogger.With("attachment_id", attachment.UID).
+		With("meeting_and_occurrence_id", attachment.MeetingAndOccurrenceID).
+		DebugContext(ctx, "converted past meeting attachment")
+
+	return &attachment, nil
+}
+
+// sendPastMeetingAttachmentIndexerMessage sends the indexer message to NATS for past meeting attachments.
+func sendPastMeetingAttachmentIndexerMessage(ctx context.Context, subject string, action indexerConstants.MessageAction, data InputPastMeetingAttachment) error {
+	headers := make(map[string]string)
+
+	// Extract authorization from context if available
+	if authorization, ok := ctx.Value("authorization").(string); ok {
+		headers["authorization"] = authorization
+	} else {
+		headers["authorization"] = "Bearer v1-sync-helper"
+	}
+
+	// Extract principal from context if available
+	if principal, ok := ctx.Value("principal").(string); ok {
+		headers["x-on-behalf-of"] = principal
+	}
+
+	// Construct the indexer message
+	public := false
+	nameAndAliases := []string{}
+	parentRefs := []string{}
+	tags := []string{}
+	if data.UID != "" {
+		tags = append(tags, data.UID)
+	}
+	if data.Name != "" {
+		nameAndAliases = append(nameAndAliases, data.Name)
+	}
+	if data.MeetingID != "" {
+		parentRefs = append(parentRefs, fmt.Sprintf("meeting:%s", data.MeetingID))
+	}
+	if data.MeetingAndOccurrenceID != "" {
+		parentRefs = append(parentRefs, fmt.Sprintf("past_meeting:%s", data.MeetingAndOccurrenceID))
+	}
+	message := indexerTypes.IndexerMessageEnvelope{
+		Action:  action,
+		Headers: headers,
+		Data:    data,
+		IndexingConfig: &indexerTypes.IndexingConfig{
+			ObjectID:             "{{ uid }}",
+			Public:               &public,
+			AccessCheckObject:    "v1_past_meeting:{{ meeting_and_occurrence_id }}",
+			AccessCheckRelation:  "viewer",
+			HistoryCheckObject:   "v1_past_meeting:{{ meeting_and_occurrence_id }}",
+			HistoryCheckRelation: "auditor",
+			SortName:             "{{ name }}",
+			NameAndAliases:       nameAndAliases,
+			ParentRefs:           parentRefs,
+			Fulltext:             "{{ name }} {{ description }}",
+			Tags:                 tags,
+		},
+	}
+
+	messageBytes, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("failed to marshal indexer message for subject %s: %w", subject, err)
+	}
+
+	logger.With("subject", subject, "action", action).DebugContext(ctx, "constructed indexer message")
+
+	if err := natsConn.Publish(subject, messageBytes); err != nil {
+		return fmt.Errorf("failed to publish indexer message to subject %s: %w", subject, err)
+	}
+
+	return nil
+}
+
+// handlePastMeetingAttachmentUpdate processes a past meeting attachment update from itx-zoom-past-meetings-attachments records.
+// Returns true if the operation should be retried, false otherwise.
+func handlePastMeetingAttachmentUpdate(ctx context.Context, key string, v1Data map[string]any) bool {
+	// Check if we should skip this sync operation.
+	if shouldSkipSync(ctx, v1Data) {
+		return false
+	}
+
+	funcLogger := logger.With("key", key)
+
+	funcLogger.DebugContext(ctx, "processing past meeting attachment update")
+
+	// Convert v1Data map to InputPastMeetingAttachment struct
+	attachment, err := convertMapToPastMeetingAttachment(ctx, v1Data)
+	if err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to convert v1Data to InputPastMeetingAttachment")
+		return false
+	}
+
+	// Extract the attachment UID
+	uid := attachment.UID
+	if uid == "" {
+		funcLogger.ErrorContext(ctx, "missing or invalid uid in v1 past meeting attachment data")
+		return false
+	}
+	funcLogger = funcLogger.With("attachment_id", uid)
+
+	// Check if parent past meeting exists in mappings before proceeding
+	if attachment.MeetingAndOccurrenceID == "" {
+		funcLogger.ErrorContext(ctx, "past meeting attachment missing required parent past meeting ID")
+		return false
+	}
+	funcLogger = funcLogger.With("meeting_and_occurrence_id", attachment.MeetingAndOccurrenceID)
+	pastMeetingMappingKey := fmt.Sprintf("v1_past_meetings.%s", attachment.MeetingAndOccurrenceID)
+	if _, err := mappingsKV.Get(ctx, pastMeetingMappingKey); err != nil {
+		funcLogger.With(errKey, err).InfoContext(ctx, "parent past meeting not found in mappings, will retry past meeting attachment sync")
+		return true
+	}
+
+	mappingKey := fmt.Sprintf("v1_past_meeting_attachments.%s", uid)
+	indexerAction := indexerConstants.ActionCreated
+	if _, err := mappingsKV.Get(ctx, mappingKey); err == nil {
+		indexerAction = indexerConstants.ActionUpdated
+	}
+
+	if err := sendPastMeetingAttachmentIndexerMessage(ctx, IndexV1PastMeetingAttachmentSubject, indexerAction, *attachment); err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to send past meeting attachment indexer message")
+		return false
+	}
+
+	if uid != "" {
+		if _, err := mappingsKV.Put(ctx, mappingKey, []byte("1")); err != nil {
+			funcLogger.With(errKey, err).WarnContext(ctx, "failed to store past meeting attachment mapping")
+		}
+	}
+
+	funcLogger.InfoContext(ctx, "successfully sent past meeting attachment indexer message")
+	return false
 }
 
 func shouldShowMeetingAttendees(m meetingInput) bool {
