@@ -651,9 +651,8 @@ func deleteV1Committee(ctx context.Context, projectSFID, committeeSFID string) e
 }
 
 // projectServiceCommitteeMemberCreate is the request body for POST /v2/projects/{projectId}/committees/{committeeID}/members.
-// Maps to the project-committee-members-platform-create swagger schema.
 type projectServiceCommitteeMemberCreate struct {
-	Email           string `json:"Email"` // required
+	Email           string `json:"Email"`
 	MemberID        string `json:"MemberID,omitempty"`
 	OrganizationID  string `json:"OrganizationID,omitempty"`
 	FirstName       string `json:"FirstName,omitempty"`
@@ -672,7 +671,6 @@ type projectServiceCommitteeMemberCreate struct {
 }
 
 // projectServiceCommitteeMemberUpdate is the request body for PATCH /v2/projects/{projectId}/committees/{committeeID}/members/{memberID}.
-// Maps to the project-committee-members-platform-patch swagger schema.
 type projectServiceCommitteeMemberUpdate struct {
 	Email           string `json:"Email,omitempty"`
 	OrganizationID  string `json:"OrganizationID,omitempty"`

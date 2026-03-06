@@ -133,32 +133,6 @@ func committeeMemberIndexerEventHandler(msg *nats.Msg) {
 		"action", event.Action,
 	).InfoContext(ctx, "received committee member indexing event")
 
-	// Look up the reverse mapping: member v2 UID -> "projectSFID:collaborationSFID:memberSFID"
-	// stored by handleCommitteeMemberUpdate.
-	reverseMappingKey := "committee_member.uid." + event.ObjectID
-	entry, err := mappingsKV.Get(ctx, reverseMappingKey)
-	if err != nil {
-		logger.With(errKey, err, "member_uid", event.ObjectID, "subject", msg.Subject).
-			WarnContext(ctx, "no reverse mapping for committee member UID, cannot sync to v1")
-		return
-	}
-
-	projectSFID, collaborationSFID, memberSFID, ok := splitThreeParts(string(entry.Value()))
-	if !ok {
-		logger.With("mapping_value", string(entry.Value()), "member_uid", event.ObjectID).
-			WarnContext(ctx, "committee member reverse mapping has unexpected format, skipping")
-		return
-	}
-
-	// Resolve committee v2 UID from the collaboration SFID.
-	committeeEntry, err := mappingsKV.Get(ctx, "committee.sfid."+collaborationSFID)
-	if err != nil {
-		logger.With(errKey, err, "collaboration_sfid", collaborationSFID, "member_uid", event.ObjectID).
-			WarnContext(ctx, "could not resolve committee UID from collaboration SFID, skipping")
-		return
-	}
-	committeeUID := string(committeeEntry.Value())
-
 	var body indexingEventBody
 	if len(event.Body) > 0 {
 		if err := json.Unmarshal(event.Body, &body); err != nil {
@@ -169,19 +143,63 @@ func committeeMemberIndexerEventHandler(msg *nats.Msg) {
 
 	switch event.Action {
 	case "created":
+		committeeUID, _ := body.Data["committee_uid"].(string)
+		if committeeUID == "" {
+			logger.With("member_uid", event.ObjectID).
+				WarnContext(ctx, "no committee_uid in committee member event body, skipping")
+			return
+		}
+		committeeEntry, err := mappingsKV.Get(ctx, "committee.uid."+committeeUID)
+		if err != nil || isTombstonedMapping(committeeEntry.Value()) {
+			logger.With(errKey, err, "committee_uid", committeeUID, "member_uid", event.ObjectID).
+				WarnContext(ctx, "could not resolve project SFID from committee UID, skipping")
+			return
+		}
+		projectSFID, committeeSFID, ok := splitTwoParts(string(committeeEntry.Value()))
+		if !ok || projectSFID == "" || committeeSFID == "" {
+			logger.With("committee_uid", committeeUID, "member_uid", event.ObjectID).
+				WarnContext(ctx, "committee reverse mapping has unexpected format, skipping")
+			return
+		}
 		logger.With("member_uid", event.ObjectID, "committee_uid", committeeUID, "project_sfid", projectSFID).
 			InfoContext(ctx, "committee member created in v2 — ensuring v1 is in sync")
-		syncCommitteeMemberCreateToV1(ctx, event.ObjectID, projectSFID, committeeUID, body.Data)
+		syncCommitteeMemberCreateToV1(ctx, event.ObjectID, projectSFID, committeeSFID, body.Data)
 
 	case "updated":
-		logger.With("member_uid", event.ObjectID, "member_sfid", memberSFID, "committee_uid", committeeUID, "project_sfid", projectSFID).
+		reverseMappingKey := "committee_member.uid." + event.ObjectID
+		entry, err := mappingsKV.Get(ctx, reverseMappingKey)
+		if err != nil {
+			logger.With(errKey, err, "member_uid", event.ObjectID, "subject", msg.Subject).
+				WarnContext(ctx, "no reverse mapping for committee member UID, cannot sync to v1")
+			return
+		}
+		projectSFID, committeeSFID, memberSFID, ok := splitThreeParts(string(entry.Value()))
+		if !ok {
+			logger.With("mapping_value", string(entry.Value()), "member_uid", event.ObjectID).
+				WarnContext(ctx, "committee member reverse mapping has unexpected format, skipping")
+			return
+		}
+		logger.With("member_uid", event.ObjectID, "member_sfid", memberSFID, "committee_sfid", committeeSFID, "project_sfid", projectSFID).
 			InfoContext(ctx, "committee member updated in v2 — syncing to v1")
-		syncCommitteeMemberUpdateToV1(ctx, event.ObjectID, projectSFID, committeeUID, memberSFID, body.Data)
+		syncCommitteeMemberUpdateToV1(ctx, event.ObjectID, projectSFID, committeeSFID, memberSFID, body.Data)
 
 	case "deleted":
-		logger.With("member_uid", event.ObjectID, "member_sfid", memberSFID, "committee_uid", committeeUID, "project_sfid", projectSFID).
+		reverseMappingKey := "committee_member.uid." + event.ObjectID
+		entry, err := mappingsKV.Get(ctx, reverseMappingKey)
+		if err != nil {
+			logger.With(errKey, err, "member_uid", event.ObjectID, "subject", msg.Subject).
+				WarnContext(ctx, "no reverse mapping for committee member UID, cannot sync to v1")
+			return
+		}
+		projectSFID, committeeSFID, memberSFID, ok := splitThreeParts(string(entry.Value()))
+		if !ok {
+			logger.With("mapping_value", string(entry.Value()), "member_uid", event.ObjectID).
+				WarnContext(ctx, "committee member reverse mapping has unexpected format, skipping")
+			return
+		}
+		logger.With("member_uid", event.ObjectID, "member_sfid", memberSFID, "committee_sfid", committeeSFID, "project_sfid", projectSFID).
 			InfoContext(ctx, "committee member deleted in v2 — syncing deletion to v1")
-		syncCommitteeMemberDeleteToV1(ctx, event.ObjectID, projectSFID, committeeUID, memberSFID)
+		syncCommitteeMemberDeleteToV1(ctx, event.ObjectID, projectSFID, committeeSFID, memberSFID)
 
 	default:
 		logger.With("action", event.Action, "subject", msg.Subject).
@@ -192,24 +210,25 @@ func committeeMemberIndexerEventHandler(msg *nats.Msg) {
 // syncCommitteeCreateToV1 ensures a v2-created committee exists in v1.
 // If a reverse mapping already exists the record originated in v1 — skip to avoid loops.
 func syncCommitteeCreateToV1(ctx context.Context, committeeUID, projectSFID string, data map[string]any) {
+	log := logger.With("committee_uid", committeeUID, "project_sfid", projectSFID)
+
 	// A non-tombstoned reverse mapping means this was created from v1; skip.
 	reverseKey := "committee.uid." + committeeUID
 	if entry, err := mappingsKV.Get(ctx, reverseKey); err == nil && !isTombstonedMapping(entry.Value()) {
-		logger.With("committee_uid", committeeUID).DebugContext(ctx, "committee originated from v1 — skipping reverse sync")
+		log.DebugContext(ctx, "committee originated from v1 — skipping reverse sync")
 		return
 	}
 
 	name, _ := data["name"].(string)
 	if name == "" || projectSFID == "" {
-		logger.With("committee_uid", committeeUID).WarnContext(ctx, "missing name or project SFID for committee create sync, skipping")
+		log.WarnContext(ctx, "missing name or project SFID for committee create sync, skipping")
 		return
 	}
 
 	payload := projectServiceCommitteeCreate{Name: name}
 	category, _ := data["category"].(string)
 	mapped := mapV2CategoryToV1(category)
-	logger.With("committee_uid", committeeUID, "v2_category", category, "v1_category", mapped).
-		InfoContext(ctx, "mapping v2 committee category to v1")
+	log.With("v2_category", category, "v1_category", mapped).InfoContext(ctx, "mapping v2 committee category to v1")
 	payload.Category = mapped
 	if desc, ok := data["description"].(string); ok {
 		payload.Description = desc
@@ -218,34 +237,33 @@ func syncCommitteeCreateToV1(ctx context.Context, committeeUID, projectSFID stri
 		payload.Website = website
 	}
 
-	logger.With("committee_uid", committeeUID, "project_sfid", projectSFID, "payload_category", payload.Category).
-		InfoContext(ctx, "creating committee in v1")
+	log.With("payload_category", payload.Category).InfoContext(ctx, "creating committee in v1")
 
 	result, err := createV1Committee(ctx, projectSFID, payload)
 	if err != nil {
-		logger.With(errKey, err, "committee_uid", committeeUID, "project_sfid", projectSFID).
-			ErrorContext(ctx, "failed to create committee in v1")
+		log.With(errKey, err).ErrorContext(ctx, "failed to create committee in v1")
 		return
 	}
 
 	// Store forward mapping (v1 SFID -> v2 UID) and reverse mapping (v2 UID -> projectSFID:committeeSFID).
 	committeeSFID := result.ID
 	if _, err := mappingsKV.Put(ctx, "committee.sfid."+committeeSFID, []byte(committeeUID)); err != nil {
-		logger.With(errKey, err, "committee_sfid", committeeSFID, "committee_uid", committeeUID).
+		log.With(errKey, err, "committee_sfid", committeeSFID).
 			WarnContext(ctx, "failed to store committee forward mapping after v1 create")
 	}
 	reverseMappingValue := projectSFID + ":" + committeeSFID
 	if _, err := mappingsKV.Put(ctx, "committee.uid."+committeeUID, []byte(reverseMappingValue)); err != nil {
-		logger.With(errKey, err, "committee_uid", committeeUID, "committee_sfid", committeeSFID).
+		log.With(errKey, err, "committee_sfid", committeeSFID).
 			WarnContext(ctx, "failed to store committee reverse mapping after v1 create")
 	}
 
-	logger.With("committee_uid", committeeUID, "committee_sfid", committeeSFID, "project_sfid", projectSFID).
-		InfoContext(ctx, "successfully created committee in v1 from indexer event")
+	log.With("committee_sfid", committeeSFID).InfoContext(ctx, "successfully created committee in v1 from indexer event")
 }
 
 // syncCommitteeUpdateToV1 patches a v1 committee to match the v2 state.
 func syncCommitteeUpdateToV1(ctx context.Context, committeeUID, projectSFID, committeeSFID string, data map[string]any) {
+	log := logger.With("committee_uid", committeeUID, "project_sfid", projectSFID, "committee_sfid", committeeSFID)
+
 	payload := projectServiceCommitteeUpdate{}
 	name, _ := data["name"].(string)
 	if name != "" {
@@ -262,46 +280,46 @@ func syncCommitteeUpdateToV1(ctx context.Context, committeeUID, projectSFID, com
 	}
 
 	if err := updateV1Committee(ctx, projectSFID, committeeSFID, payload); err != nil {
-		logger.With(errKey, err, "committee_uid", committeeUID, "project_sfid", projectSFID).
-			ErrorContext(ctx, "failed to update committee in v1")
+		log.With(errKey, err).ErrorContext(ctx, "failed to update committee in v1")
 		return
 	}
 
-	logger.With("committee_uid", committeeUID, "project_sfid", projectSFID).
-		InfoContext(ctx, "successfully updated committee in v1 from indexer event")
+	log.InfoContext(ctx, "successfully updated committee in v1 from indexer event")
 }
 
 // syncCommitteeDeleteToV1 deletes a v1 committee that was deleted in v2.
 func syncCommitteeDeleteToV1(ctx context.Context, committeeUID, projectSFID, committeeSFID string) {
+	log := logger.With("committee_uid", committeeUID, "project_sfid", projectSFID, "committee_sfid", committeeSFID)
+
 	if err := deleteV1Committee(ctx, projectSFID, committeeSFID); err != nil {
-		logger.With(errKey, err, "committee_uid", committeeUID, "project_sfid", projectSFID).
-			ErrorContext(ctx, "failed to delete committee in v1")
+		log.With(errKey, err).ErrorContext(ctx, "failed to delete committee in v1")
 		return
 	}
 
 	if err := tombstoneMapping(ctx, "committee.sfid."+committeeSFID); err != nil {
-		logger.With(errKey, err, "committee_sfid", committeeSFID).WarnContext(ctx, "failed to tombstone committee forward mapping after v1 delete")
+		log.With(errKey, err).WarnContext(ctx, "failed to tombstone committee forward mapping after v1 delete")
 	}
 	if err := tombstoneMapping(ctx, "committee.uid."+committeeUID); err != nil {
-		logger.With(errKey, err, "committee_uid", committeeUID).WarnContext(ctx, "failed to tombstone committee reverse mapping after v1 delete")
+		log.With(errKey, err).WarnContext(ctx, "failed to tombstone committee reverse mapping after v1 delete")
 	}
 
-	logger.With("committee_uid", committeeUID, "project_sfid", projectSFID).
-		InfoContext(ctx, "successfully deleted committee in v1 from indexer event")
+	log.InfoContext(ctx, "successfully deleted committee in v1 from indexer event")
 }
 
 // syncCommitteeMemberCreateToV1 ensures a v2-created committee member exists in v1.
-func syncCommitteeMemberCreateToV1(ctx context.Context, memberUID, projectSFID, committeeUID string, data map[string]any) {
+func syncCommitteeMemberCreateToV1(ctx context.Context, memberUID, projectSFID, committeeSFID string, data map[string]any) {
+	log := logger.With("member_uid", memberUID, "project_sfid", projectSFID, "committee_sfid", committeeSFID)
+
 	// A non-tombstoned reverse mapping means this was created from v1; skip.
 	reverseKey := "committee_member.uid." + memberUID
 	if entry, err := mappingsKV.Get(ctx, reverseKey); err == nil && !isTombstonedMapping(entry.Value()) {
-		logger.With("member_uid", memberUID).DebugContext(ctx, "committee member originated from v1 — skipping reverse sync")
+		log.DebugContext(ctx, "committee member originated from v1 — skipping reverse sync")
 		return
 	}
 
 	email, _ := data["email"].(string)
 	if email == "" {
-		logger.With("member_uid", memberUID).WarnContext(ctx, "missing email for committee member create sync, skipping")
+		log.WarnContext(ctx, "missing email for committee member create sync, skipping")
 		return
 	}
 
@@ -312,67 +330,130 @@ func syncCommitteeMemberCreateToV1(ctx context.Context, memberUID, projectSFID, 
 	if lastName, ok := data["last_name"].(string); ok {
 		payload.LastName = lastName
 	}
+	if jobTitle, ok := data["job_title"].(string); ok {
+		payload.Title = jobTitle
+	}
 	if role, ok := data["role"].(string); ok {
 		payload.Role = role
 	}
 	if status, ok := data["status"].(string); ok {
 		payload.Status = status
 	}
+	if appointedBy, ok := data["appointed_by"].(string); ok {
+		payload.AppointedBy = appointedBy
+	}
+	if agency, ok := data["agency"].(string); ok {
+		payload.Agency = agency
+	}
+	if country, ok := data["country"].(string); ok {
+		payload.Country = country
+	}
+	if voting, ok := data["voting"].(map[string]any); ok {
+		if vs, ok := voting["status"].(string); ok {
+			payload.VotingStatus = vs
+		}
+		if vsd, ok := voting["start_date"].(string); ok {
+			payload.VotingStartDate = vsd
+		}
+		if ved, ok := voting["end_date"].(string); ok {
+			payload.VotingEndDate = ved
+		}
+	}
+	if org, ok := data["organization"].(map[string]any); ok {
+		if orgID, ok := org["id"].(string); ok {
+			payload.OrganizationID = orgID
+		}
+	}
 
-	result, err := createV1CommitteeMember(ctx, projectSFID, committeeUID, payload)
+	result, err := createV1CommitteeMember(ctx, projectSFID, committeeSFID, payload)
 	if err != nil {
-		logger.With(errKey, err, "member_uid", memberUID, "committee_uid", committeeUID).
-			ErrorContext(ctx, "failed to create committee member in v1")
+		log.With(errKey, err).ErrorContext(ctx, "failed to create committee member in v1")
 		return
 	}
 
-	logger.With("member_uid", memberUID, "v1_id", result.ID, "committee_uid", committeeUID).
-		InfoContext(ctx, "successfully created committee member in v1 from indexer event")
+	// Store forward mapping (v1 SFID -> v2 UID) and reverse mapping (v2 UID -> projectSFID:committeeSFID:memberSFID).
+	memberSFID := result.MemberID
+	if _, err := mappingsKV.Put(ctx, "committee_member.sfid."+memberSFID, []byte(memberUID)); err != nil {
+		log.With(errKey, err, "member_sfid", memberSFID).
+			WarnContext(ctx, "failed to store committee member forward mapping after v1 create")
+	}
+	reverseMappingValue := projectSFID + ":" + committeeSFID + ":" + memberSFID
+	if _, err := mappingsKV.Put(ctx, "committee_member.uid."+memberUID, []byte(reverseMappingValue)); err != nil {
+		log.With(errKey, err, "member_sfid", memberSFID).
+			WarnContext(ctx, "failed to store committee member reverse mapping after v1 create")
+	}
+
+	log.With("member_sfid", memberSFID).InfoContext(ctx, "successfully created committee member in v1 from indexer event")
 }
 
 // syncCommitteeMemberUpdateToV1 patches a v1 committee member to match the v2 state.
-func syncCommitteeMemberUpdateToV1(ctx context.Context, memberUID, projectSFID, committeeUID, _ string, data map[string]any) {
+func syncCommitteeMemberUpdateToV1(ctx context.Context, memberUID, projectSFID, committeeSFID, memberSFID string, data map[string]any) {
+	log := logger.With("member_uid", memberUID, "project_sfid", projectSFID, "committee_sfid", committeeSFID, "member_sfid", memberSFID)
+
 	payload := projectServiceCommitteeMemberUpdate{}
 	if email, ok := data["email"].(string); ok {
 		payload.Email = email
 	}
+	if jobTitle, ok := data["job_title"].(string); ok {
+		payload.Title = jobTitle
+	}
 	if role, ok := data["role"].(string); ok {
 		payload.Role = role
 	}
 	if status, ok := data["status"].(string); ok {
 		payload.Status = status
 	}
-	if title, ok := data["title"].(string); ok {
-		payload.Title = title
+	if appointedBy, ok := data["appointed_by"].(string); ok {
+		payload.AppointedBy = appointedBy
+	}
+	if agency, ok := data["agency"].(string); ok {
+		payload.Agency = agency
+	}
+	if country, ok := data["country"].(string); ok {
+		payload.Country = country
+	}
+	if voting, ok := data["voting"].(map[string]any); ok {
+		if vs, ok := voting["status"].(string); ok {
+			payload.VotingStatus = vs
+		}
+		if vsd, ok := voting["start_date"].(string); ok {
+			payload.VotingStartDate = vsd
+		}
+		if ved, ok := voting["end_date"].(string); ok {
+			payload.VotingEndDate = ved
+		}
+	}
+	if org, ok := data["organization"].(map[string]any); ok {
+		if orgID, ok := org["id"].(string); ok {
+			payload.OrganizationID = orgID
+		}
 	}
 
-	if err := updateV1CommitteeMember(ctx, projectSFID, committeeUID, memberUID, payload); err != nil {
-		logger.With(errKey, err, "member_uid", memberUID, "committee_uid", committeeUID).
-			ErrorContext(ctx, "failed to update committee member in v1")
+	if err := updateV1CommitteeMember(ctx, projectSFID, committeeSFID, memberSFID, payload); err != nil {
+		log.With(errKey, err).ErrorContext(ctx, "failed to update committee member in v1")
 		return
 	}
 
-	logger.With("member_uid", memberUID, "committee_uid", committeeUID).
-		InfoContext(ctx, "successfully updated committee member in v1 from indexer event")
+	log.InfoContext(ctx, "successfully updated committee member in v1 from indexer event")
 }
 
 // syncCommitteeMemberDeleteToV1 deletes a v1 committee member that was deleted in v2.
-func syncCommitteeMemberDeleteToV1(ctx context.Context, memberUID, projectSFID, committeeUID, memberSFID string) {
-	if err := deleteV1CommitteeMember(ctx, projectSFID, committeeUID, memberUID); err != nil {
-		logger.With(errKey, err, "member_uid", memberUID, "committee_uid", committeeUID).
-			ErrorContext(ctx, "failed to delete committee member in v1")
+func syncCommitteeMemberDeleteToV1(ctx context.Context, memberUID, projectSFID, committeeSFID, memberSFID string) {
+	log := logger.With("member_uid", memberUID, "project_sfid", projectSFID, "committee_sfid", committeeSFID, "member_sfid", memberSFID)
+
+	if err := deleteV1CommitteeMember(ctx, projectSFID, committeeSFID, memberSFID); err != nil {
+		log.With(errKey, err).ErrorContext(ctx, "failed to delete committee member in v1")
 		return
 	}
 
 	if err := tombstoneMapping(ctx, "committee_member.sfid."+memberSFID); err != nil {
-		logger.With(errKey, err, "member_sfid", memberSFID).WarnContext(ctx, "failed to tombstone committee member forward mapping after v1 delete")
+		log.With(errKey, err).WarnContext(ctx, "failed to tombstone committee member forward mapping after v1 delete")
 	}
 	if err := tombstoneMapping(ctx, "committee_member.uid."+memberUID); err != nil {
-		logger.With(errKey, err, "member_uid", memberUID).WarnContext(ctx, "failed to tombstone committee member reverse mapping after v1 delete")
+		log.With(errKey, err).WarnContext(ctx, "failed to tombstone committee member reverse mapping after v1 delete")
 	}
 
-	logger.With("member_uid", memberUID, "committee_uid", committeeUID).
-		InfoContext(ctx, "successfully deleted committee member in v1 from indexer event")
+	log.InfoContext(ctx, "successfully deleted committee member in v1 from indexer event")
 }
 
 // splitTwoParts splits an "a:b" string into its two parts.
