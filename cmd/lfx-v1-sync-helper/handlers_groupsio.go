@@ -10,7 +10,7 @@ import (
 
 // handleGroupsioServiceUpdate processes a service configuration update from itx-groupsio-v2-service records.
 // Returns true if the operation should be retried, false otherwise.
-func handleGroupsioServiceUpdate(ctx context.Context, key string, v1Data map[string]any) bool {
+func handleGroupsioServiceUpdate(ctx context.Context, key string, _ map[string]any) bool {
 	logger.With("key", key).DebugContext(ctx, "groups.io service update not yet implemented")
 	return false
 }
@@ -24,7 +24,7 @@ func handleGroupsioServiceDelete(ctx context.Context, key string, sfid string) b
 
 // handleGroupsioSubgroupUpdate processes a mailing list/subgroup update from itx-groupsio-v2-subgroup records.
 // Returns true if the operation should be retried, false otherwise.
-func handleGroupsioSubgroupUpdate(ctx context.Context, key string, v1Data map[string]any) bool {
+func handleGroupsioSubgroupUpdate(ctx context.Context, key string, _ map[string]any) bool {
 	logger.With("key", key).DebugContext(ctx, "groups.io subgroup update not yet implemented")
 	return false
 }
@@ -38,7 +38,7 @@ func handleGroupsioSubgroupDelete(ctx context.Context, key string, sfid string) 
 
 // handleGroupsioMemberUpdate processes a member information update from itx-groupsio-v2-member records.
 // Returns true if the operation should be retried, false otherwise.
-func handleGroupsioMemberUpdate(ctx context.Context, key string, v1Data map[string]any) bool {
+func handleGroupsioMemberUpdate(ctx context.Context, key string, _ map[string]any) bool {
 	logger.With("key", key).DebugContext(ctx, "groups.io member update not yet implemented")
 	return false
 }
