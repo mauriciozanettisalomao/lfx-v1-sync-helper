@@ -2862,6 +2862,44 @@ func handleZoomPastMeetingSummaryDelete(ctx context.Context, key string, summary
 	})
 }
 
+// handleMeetingAttachmentDelete processes a deletion of an itx-zoom-meetings-attachments-v2 record.
+// Returns true if the operation should be retried, false otherwise.
+func handleMeetingAttachmentDelete(ctx context.Context, key string, attachmentID string) bool {
+	funcLogger := logger.With("key", key, "attachment_id", attachmentID)
+
+	// Skip if already tombstoned — prevents double processing when the DynamoDB path
+	// has already handled the delete before the KV watcher fires.
+	mappingKey := fmt.Sprintf("v1_meeting_attachments.%s", attachmentID)
+	if entry, err := mappingsKV.Get(ctx, mappingKey); err == nil && isTombstonedMapping(entry.Value()) {
+		funcLogger.DebugContext(ctx, "meeting attachment delete already processed, skipping")
+		return false
+	}
+
+	return handleMeetingTypeDelete(ctx, key, attachmentID, []byte(attachmentID), meetingDeleteConfig{
+		indexerSubject:   IndexV1MeetingAttachmentSubject,
+		tombstoneKeyFmts: []string{"v1_meeting_attachments.%s"},
+	})
+}
+
+// handlePastMeetingAttachmentDelete processes a deletion of an itx-zoom-past-meetings-attachments record.
+// Returns true if the operation should be retried, false otherwise.
+func handlePastMeetingAttachmentDelete(ctx context.Context, key string, attachmentID string) bool {
+	funcLogger := logger.With("key", key, "attachment_id", attachmentID)
+
+	// Skip if already tombstoned — prevents double processing when the DynamoDB path
+	// has already handled the delete before the KV watcher fires.
+	mappingKey := fmt.Sprintf("v1_past_meeting_attachments.%s", attachmentID)
+	if entry, err := mappingsKV.Get(ctx, mappingKey); err == nil && isTombstonedMapping(entry.Value()) {
+		funcLogger.DebugContext(ctx, "past meeting attachment delete already processed, skipping")
+		return false
+	}
+
+	return handleMeetingTypeDelete(ctx, key, attachmentID, []byte(attachmentID), meetingDeleteConfig{
+		indexerSubject:   IndexV1PastMeetingAttachmentSubject,
+		tombstoneKeyFmts: []string{"v1_past_meeting_attachments.%s"},
+	})
+}
+
 // convertMapToMeetingAttachment converts a v1Data map to an InputMeetingAttachment struct.
 func convertMapToMeetingAttachment(ctx context.Context, v1Data map[string]any) (*InputMeetingAttachment, error) {
 	funcLogger := logger.With("handler", "meeting_attachment")
