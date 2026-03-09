@@ -2875,10 +2875,17 @@ func handleMeetingAttachmentDelete(ctx context.Context, key string, attachmentID
 		return false
 	}
 
-	return handleMeetingTypeDelete(ctx, key, attachmentID, []byte(attachmentID), meetingDeleteConfig{
-		indexerSubject:   IndexV1MeetingAttachmentSubject,
-		tombstoneKeyFmts: []string{"v1_meeting_attachments.%s"},
-	})
+	if err := sendMeetingAttachmentIndexerMessage(ctx, IndexV1MeetingAttachmentSubject, indexerConstants.ActionDeleted, InputMeetingAttachment{UID: attachmentID}); err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to send meeting attachment delete indexer message")
+		return true
+	}
+
+	if err := tombstoneMapping(ctx, mappingKey); err != nil {
+		funcLogger.With(errKey, err).WarnContext(ctx, "failed to tombstone meeting attachment mapping")
+	}
+
+	funcLogger.InfoContext(ctx, "successfully processed meeting attachment delete")
+	return false
 }
 
 // handlePastMeetingAttachmentDelete processes a deletion of an itx-zoom-past-meetings-attachments record.
@@ -2894,10 +2901,17 @@ func handlePastMeetingAttachmentDelete(ctx context.Context, key string, attachme
 		return false
 	}
 
-	return handleMeetingTypeDelete(ctx, key, attachmentID, []byte(attachmentID), meetingDeleteConfig{
-		indexerSubject:   IndexV1PastMeetingAttachmentSubject,
-		tombstoneKeyFmts: []string{"v1_past_meeting_attachments.%s"},
-	})
+	if err := sendPastMeetingAttachmentIndexerMessage(ctx, IndexV1PastMeetingAttachmentSubject, indexerConstants.ActionDeleted, InputPastMeetingAttachment{UID: attachmentID}); err != nil {
+		funcLogger.With(errKey, err).ErrorContext(ctx, "failed to send past meeting attachment delete indexer message")
+		return true
+	}
+
+	if err := tombstoneMapping(ctx, mappingKey); err != nil {
+		funcLogger.With(errKey, err).WarnContext(ctx, "failed to tombstone past meeting attachment mapping")
+	}
+
+	funcLogger.InfoContext(ctx, "successfully processed past meeting attachment delete")
+	return false
 }
 
 // convertMapToMeetingAttachment converts a v1Data map to an InputMeetingAttachment struct.
@@ -2977,23 +2991,32 @@ func sendMeetingAttachmentIndexerMessage(ctx context.Context, subject string, ac
 	if data.MeetingID != "" {
 		parentRefs = append(parentRefs, fmt.Sprintf("meeting:%s", data.MeetingID))
 	}
+	indexingConfig := &indexerTypes.IndexingConfig{
+		ObjectID:             data.UID,
+		Public:               &public,
+		AccessCheckObject:    "v1_meeting:" + data.MeetingID,
+		AccessCheckRelation:  "viewer",
+		HistoryCheckObject:   "v1_meeting:" + data.MeetingID,
+		HistoryCheckRelation: "auditor",
+		SortName:             data.Name,
+		NameAndAliases:       nameAndAliases,
+		ParentRefs:           parentRefs,
+		Fulltext:             data.Name + " " + data.Description,
+		Tags:                 tags,
+	}
+
+	var messageData any
+	if action == indexerConstants.ActionDeleted {
+		messageData = data.UID
+	} else {
+		messageData = data
+	}
+
 	message := indexerTypes.IndexerMessageEnvelope{
-		Action:  action,
-		Headers: headers,
-		Data:    data,
-		IndexingConfig: &indexerTypes.IndexingConfig{
-			ObjectID:             "{{ uid }}",
-			Public:               &public,
-			AccessCheckObject:    "v1_meeting:{{ meeting_id }}",
-			AccessCheckRelation:  "viewer",
-			HistoryCheckObject:   "v1_meeting:{{ meeting_id }}",
-			HistoryCheckRelation: "auditor",
-			SortName:             "{{ name }}",
-			NameAndAliases:       nameAndAliases,
-			ParentRefs:           parentRefs,
-			Fulltext:             "{{ name }} {{ description }}",
-			Tags:                 tags,
-		},
+		Action:         action,
+		Headers:        headers,
+		Data:           messageData,
+		IndexingConfig: indexingConfig,
 	}
 
 	messageBytes, err := json.Marshal(message)
@@ -3151,23 +3174,32 @@ func sendPastMeetingAttachmentIndexerMessage(ctx context.Context, subject string
 	if data.MeetingAndOccurrenceID != "" {
 		parentRefs = append(parentRefs, fmt.Sprintf("past_meeting:%s", data.MeetingAndOccurrenceID))
 	}
+	indexingConfig := &indexerTypes.IndexingConfig{
+		ObjectID:             data.UID,
+		Public:               &public,
+		AccessCheckObject:    "v1_past_meeting:" + data.MeetingAndOccurrenceID,
+		AccessCheckRelation:  "viewer",
+		HistoryCheckObject:   "v1_past_meeting:" + data.MeetingAndOccurrenceID,
+		HistoryCheckRelation: "auditor",
+		SortName:             data.Name,
+		NameAndAliases:       nameAndAliases,
+		ParentRefs:           parentRefs,
+		Fulltext:             data.Name + " " + data.Description,
+		Tags:                 tags,
+	}
+
+	var messageData any
+	if action == indexerConstants.ActionDeleted {
+		messageData = data.UID
+	} else {
+		messageData = data
+	}
+
 	message := indexerTypes.IndexerMessageEnvelope{
-		Action:  action,
-		Headers: headers,
-		Data:    data,
-		IndexingConfig: &indexerTypes.IndexingConfig{
-			ObjectID:             "{{ uid }}",
-			Public:               &public,
-			AccessCheckObject:    "v1_past_meeting:{{ meeting_and_occurrence_id }}",
-			AccessCheckRelation:  "viewer",
-			HistoryCheckObject:   "v1_past_meeting:{{ meeting_and_occurrence_id }}",
-			HistoryCheckRelation: "auditor",
-			SortName:             "{{ name }}",
-			NameAndAliases:       nameAndAliases,
-			ParentRefs:           parentRefs,
-			Fulltext:             "{{ name }} {{ description }}",
-			Tags:                 tags,
-		},
+		Action:         action,
+		Headers:        headers,
+		Data:           messageData,
+		IndexingConfig: indexingConfig,
 	}
 
 	messageBytes, err := json.Marshal(message)
