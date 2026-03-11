@@ -234,7 +234,7 @@ npx prettier --write meltano/meltano.yml
 
 ### 2. `charts/lfx-v1-sync-helper/values.yaml` — WAL listener table filter
 
-Add the table to `walListener.config.listener.filter.tables` with `insert`, `update`, and `delete` operations. Use the exact quoted table name as it appears in PostgreSQL (e.g. `"myschema.MyTable"`), since the WAL listener is case-sensitive.
+Add the table to `walListener.config.listener.filter.tables` with `insert`, `update`, and `delete` operations. Use only the bare table name (no schema prefix), since wal-listener filters on `item.Table` alone (e.g. `Account`, not `salesforce_b2b.Account`). Table names are case-sensitive.
 
 ### 3. PostgreSQL `wal-listener` publication — per-environment, ad hoc
 
