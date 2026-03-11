@@ -322,6 +322,35 @@ walListener:
             - insert
             - update
             - delete
+          # salesforce_b2b schema tables for member service replication.
+          "salesforce_b2b.Account":
+            - insert
+            - update
+            - delete
+          "salesforce_b2b.Asset":
+            - insert
+            - update
+            - delete
+          "salesforce_b2b.Product2":
+            - insert
+            - update
+            - delete
+          "salesforce_b2b.Contact":
+            - insert
+            - update
+            - delete
+          "salesforce_b2b.Alternate_Email__c":
+            - insert
+            - update
+            - delete
+          "salesforce_b2b.Project__c":
+            - insert
+            - update
+            - delete
+          "salesforce_b2b.Project_Role__c":
+            - insert
+            - update
+            - delete
     logger:
       # level is the logging level
       level: info
